@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# 测试生成的文件
+sample_financial_regulation.txt
+
+# 真实文档（版权/隐私考虑）
+*.pdf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境
+.env
+.venv
+venv/
+
+# 系统文件
+.DS_Store
+Thumbs.db
