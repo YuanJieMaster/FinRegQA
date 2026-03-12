@@ -1,27 +1,72 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# 测试生成的文件
-sample_financial_regulation.txt
-
-# 真实文档（版权/隐私考虑）
-*.pdf
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.DS_Store
 
-# 环境
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# FAISS索引
+faiss_index/
+*.index
+id_map.json
+
+# PostgreSQL
+postgres_data/
+
+# Logs
+*.log
+logs/
+
+# Environment variables
 .env
-.venv
-venv/
+.env.local
 
-# 系统文件
+# OS
 .DS_Store
 Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+*.pdf
