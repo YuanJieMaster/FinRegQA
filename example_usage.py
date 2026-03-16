@@ -9,6 +9,118 @@ import os
 from knowledge_base import FinancialKnowledgeBase
 
 
+_DEFAULT_KB = None
+
+
+def get_default_kb() -> FinancialKnowledgeBase:
+    """
+    获取（并缓存）默认 FinancialKnowledgeBase 实例。
+
+    连接参数可通过环境变量覆盖：
+    - FINREGQA_DB_HOST / FINREGQA_DB_PORT / FINREGQA_DB_NAME / FINREGQA_DB_USER / FINREGQA_DB_PASSWORD
+    - FINREGQA_EMBEDDING_MODEL / FINREGQA_FAISS_INDEX_PATH / FINREGQA_MAX_CONNECTIONS / FINREGQA_EMBEDDING_DIM
+    """
+
+    global _DEFAULT_KB
+    if _DEFAULT_KB is not None:
+        return _DEFAULT_KB
+
+    _DEFAULT_KB = FinancialKnowledgeBase(
+        db_host=os.getenv("FINREGQA_DB_HOST", "localhost"),
+        db_port=int(os.getenv("FINREGQA_DB_PORT", "5432")),
+        db_name=os.getenv("FINREGQA_DB_NAME", "financial_kb"),
+        db_user=os.getenv("FINREGQA_DB_USER", "postgres"),
+        db_password=os.getenv("FINREGQA_DB_PASSWORD", "postgres"),
+        embedding_model=os.getenv("FINREGQA_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
+        faiss_index_path=os.getenv("FINREGQA_FAISS_INDEX_PATH", "./faiss_index"),
+        max_connections=int(os.getenv("FINREGQA_MAX_CONNECTIONS", "10")),
+        embedding_dim=int(os.getenv("FINREGQA_EMBEDDING_DIM", "768")),
+    )
+    return _DEFAULT_KB
+
+
+def close_default_kb() -> None:
+    """关闭默认 KB 连接池（如果已创建）。"""
+
+    global _DEFAULT_KB
+    if _DEFAULT_KB is not None:
+        _DEFAULT_KB.close()
+        _DEFAULT_KB = None
+
+
+def answer_question(question: str) -> dict:
+    """
+    输入用户问题，返回：
+    - answer: 生成的自然语言答案（抽取式，避免无依据编造）
+    - references: 用到的知识片段（content、article_number、document_name 等）
+    - raw_results: 原始检索结果
+    """
+
+    q = (question or "").strip()
+    if not q:
+        return {
+            "answer": "问题为空：请提供一个具体的金融监管问题。",
+            "references": [],
+            "raw_results": [],
+        }
+
+    kb = get_default_kb()
+
+    # 检索参数：优先从环境变量读，便于调参；不给则使用合理默认值
+    top_k = int(os.getenv("FINREGQA_TOP_K", "8"))
+    threshold = float(os.getenv("FINREGQA_THRESHOLD", "0.55"))
+
+    raw_results = kb.search(query=q, top_k=top_k, threshold=threshold)
+
+    references = [
+        {
+            "knowledge_id": r.get("knowledge_id"),
+            "document_name": r.get("document_name"),
+            "category": r.get("category"),
+            "regulation_type": r.get("regulation_type"),
+            "article_number": r.get("article_number"),
+            "section_number": r.get("section_number"),
+            "similarity": r.get("similarity"),
+            "content": r.get("content"),
+        }
+        for r in raw_results
+    ]
+
+    if not raw_results:
+        return {
+            "answer": (
+                "未检索到足够相关的法规依据，无法可靠回答。"
+                "你可以尝试更具体的关键词（如“核心一级资本充足率”“流动性覆盖率”）或降低检索阈值（FINREGQA_THRESHOLD）。"
+            ),
+            "references": [],
+            "raw_results": raw_results,
+        }
+
+    # 生成一个“可控”的答案：把最相关的 1-3 条依据拼接，并明确来源
+    top_refs = references[: min(3, len(references))]
+    lines = []
+    lines.append(f"问题：{q}")
+    lines.append("基于已检索到的法规片段，相关依据如下：")
+    for i, ref in enumerate(top_refs, 1):
+        doc = ref.get("document_name") or "未知文档"
+        art = ref.get("article_number") or ""
+        sec = ref.get("section_number") or ""
+        sim = ref.get("similarity")
+        sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
+        snippet = (ref.get("content") or "").strip()
+        if len(snippet) > 240:
+            snippet = snippet[:240] + "…"
+        lines.append(f"{i}) [{doc}] {art} {sec}（相似度 {sim_text}）：{snippet}")
+
+    lines.append("结论：以上为检索到的条款依据摘要；如需严格合规结论，请以原文条款为准并补充更具体问题。")
+
+    return {
+        "answer": "\n".join(lines),
+        "references": top_refs,
+        "raw_results": raw_results,
+    }
+
+
 def example_basic_usage():
     """基本使用示例"""
     print("=" * 80)
@@ -275,14 +387,15 @@ if __name__ == "__main__":
     
     try:
         # 运行示例
-        example_basic_usage()
-        example_batch_import()
-        example_error_handling()
-        example_performance_test()
-        
-        print("\n" + "=" * 80)
-        print("所有示例执行完成！")
-        print("=" * 80)
+        # example_basic_usage()
+        # example_batch_import()
+        # example_error_handling()
+        # example_performance_test()
+
+        results = answer_question("风险管理")
+        print(results["answer"])
+        print(results["references"])
+        print(results["raw_results"])
     
     except Exception as e:
         print(f"\n✗ 执行出错: {e}")
