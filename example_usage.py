@@ -6,7 +6,10 @@ Financial Knowledge Base System - Usage Example
 """
 
 import os
+import re
+from typing import Dict, List, Optional, Tuple
 from knowledge_base import FinancialKnowledgeBase
+from financial_text_splitter import FinancialRegulationSplitter, load_financial_document
 
 
 _DEFAULT_KB = None
@@ -46,6 +49,131 @@ def close_default_kb() -> None:
     if _DEFAULT_KB is not None:
         _DEFAULT_KB.close()
         _DEFAULT_KB = None
+
+
+_CHAPTER_RE = re.compile(r"(第[零一二三四五六七八九十百千\d]+章)")
+_ARTICLE_RE = re.compile(r"(第[零一二三四五六七八九十百千\d]+条)")
+_SECTION_RE = re.compile(r"(第[零一二三四五六七八九十百千\d]+款)")
+
+
+def _extract_regulation_structure(
+    chunk: str, current_chapter: Optional[str]
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    从 chunk 中抽取“章/条/款”结构，并返回更新后的 current_chapter。
+
+    说明：
+    - 分块器在 keep_separator=True 时通常会把“第X章/第Y条”保留在 chunk 内；这里用正则做容错抽取。
+    - 金融法规存在跨 chunk 的上下文（例如章标题在上一个 chunk），因此章节用状态机方式沿用。
+    """
+
+    text = (chunk or "").strip()
+    if not text:
+        return current_chapter, None, None
+
+    chapter = current_chapter
+    m_chapter = _CHAPTER_RE.search(text[:50])
+    if m_chapter:
+        chapter = m_chapter.group(1)
+
+    m_article = _ARTICLE_RE.search(text[:60])
+    article = m_article.group(1) if m_article else None
+
+    m_section = _SECTION_RE.search(text[:80])
+    section = m_section.group(1) if m_section else None
+
+    return chapter, article, section
+
+
+def ingest_regulation_file(
+    file_path: str,
+    category: str,
+    regulation_type: str,
+    *,
+    source: Optional[str] = None,
+    min_chunk_size: int = 200,
+    keep_separator: bool = True,
+    batch_size: int = 100,
+    kb: Optional[FinancialKnowledgeBase] = None,
+) -> Dict:
+    """
+    金融分块器 → 知识库：一键导入单个监管文件（PDF/DOCX/TXT）。
+
+    1. 使用 load_financial_document + FinancialRegulationSplitter 分块
+    2. 为每个 chunk 生成 metadata（章节名、条款号、款号等）
+    3. 调用 FinancialKnowledgeBase.add_document + add_knowledge_batch 写入
+
+    Args:
+        file_path: 文件路径（.pdf/.docx/.txt）
+        category: 默认分类（如果能识别到“第X章”，则优先用章标题作为 category）
+        regulation_type: 监管类型（写入 knowledge.regulation_type）
+        source: 文档来源（document.source）；不传则默认使用 file_path
+        min_chunk_size: 过滤短片段阈值（字符数）
+        keep_separator: 是否保留“第X章/第X条”等结构标识
+        batch_size: 写入批大小（knowledge_base.add_knowledge_batch）
+        kb: 可选：传入现成的 FinancialKnowledgeBase；不传则使用 get_default_kb()
+
+    Returns:
+        导入结果：包含 document_id / chunk_count / success / failed 等统计
+    """
+
+    if not file_path or not str(file_path).strip():
+        raise ValueError("file_path 不能为空")
+
+    kb = kb or get_default_kb()
+
+    doc = load_financial_document(file_path, clean_text=True)
+    splitter = FinancialRegulationSplitter(
+        min_chunk_size=min_chunk_size,
+        keep_separator=keep_separator,
+    )
+    chunks = splitter.split_text(doc.page_content)
+
+    file_name = doc.metadata.get("file_name") or os.path.basename(file_path)
+    file_type = (doc.metadata.get("file_type") or "").lstrip(".")
+    doc_source = source or doc.metadata.get("source") or file_path
+
+    document_id = kb.add_document(
+        name=file_name,
+        source=doc_source,
+        file_type=file_type or None,
+    )
+
+    knowledge_items: List[Dict] = []
+    current_chapter: Optional[str] = None
+
+    for chunk in chunks:
+        current_chapter, article_number, section_number = _extract_regulation_structure(
+            chunk, current_chapter
+        )
+
+        # 优先用“第X章”当分类；否则回退到入参 category
+        item_category = current_chapter or category
+
+        knowledge_items.append(
+            {
+                "content": chunk.strip(),
+                "category": item_category,
+                "regulation_type": regulation_type,
+                "article_number": article_number,
+                "section_number": section_number,
+            }
+        )
+
+    success, failed = kb.add_knowledge_batch(
+        document_id=document_id,
+        knowledge_items=knowledge_items,
+        batch_size=batch_size,
+    )
+
+    return {
+        "document_id": document_id,
+        "file_name": file_name,
+        "file_type": file_type,
+        "chunk_count": len(chunks),
+        "success": success,
+        "failed": failed,
+    }
 
 
 def answer_question(question: str) -> dict:
@@ -392,7 +520,11 @@ if __name__ == "__main__":
         # example_error_handling()
         # example_performance_test()
 
-        results = answer_question("风险管理")
+        # 测试导入
+        # ingest_regulation_file("商业银行资本管理办法.pdf", "商业银行资本管理办法", "商业银行资本管理办法")
+
+        # 测试问答
+        results = answer_question("风险权重")
         print(results["answer"])
         print(results["references"])
         print(results["raw_results"])
