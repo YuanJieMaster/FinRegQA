@@ -89,7 +89,7 @@ def test_with_sample_text():
         print(f"--- 长度: {len(chunk)} 字符 ---")
 
 
-def test_with_real_document(file_path: str):
+def test_with_real_document(file_path: str = "商业银行资本管理办法.pdf"):
     """
     测试真实文档加载和分块
     
@@ -170,7 +170,7 @@ def test_with_real_document(file_path: str):
         print(f"  - 检测到章节: {chapter_count} 个")
         print(f"  - 检测到条款: {article_count} 个")
         
-        return chunks
+        assert len(chunks) > 0
         
     except FileNotFoundError:
         print(f"❌ 错误: 文件不存在 - {file_path}")
