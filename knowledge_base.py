@@ -170,7 +170,7 @@ class FinancialKnowledgeBase:
             # 创建新索引：IVF_FLAT
             logger.info(f"创建新FAISS索引 (dim={self.embedding_dim}, IVF_FLAT)")
             quantizer = faiss.IndexFlatL2(self.embedding_dim)
-            nlist = 100  # 聚类中心数量
+            nlist = 10  # 聚类中心数量
             self.faiss_index = faiss.IndexIVFFlat(
                 quantizer,
                 self.embedding_dim,
@@ -182,7 +182,7 @@ class FinancialKnowledgeBase:
         if self.faiss_index is None:
             logger.info(f"创建新FAISS索引 (dim={self.embedding_dim}, IVF_FLAT)")
             quantizer = faiss.IndexFlatL2(self.embedding_dim)
-            nlist = 100
+            nlist = 10
             self.faiss_index = faiss.IndexIVFFlat(
                 quantizer,
                 self.embedding_dim,
@@ -190,6 +190,9 @@ class FinancialKnowledgeBase:
                 faiss.METRIC_L2
             )
             self.knowledge_id_map = {}
+
+        self.faiss_index.nprobe = 10
+        # print("FAISS 索引里总向量数量：", self.faiss_index.ntotal)
     
     def _init_database(self):
         """初始化PostgreSQL数据库表"""

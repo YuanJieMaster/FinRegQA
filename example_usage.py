@@ -91,7 +91,7 @@ def ingest_regulation_file(
     regulation_type: str,
     *,
     source: Optional[str] = None,
-    min_chunk_size: int = 200,
+    min_chunk_size: int = 1,
     keep_separator: bool = True,
     batch_size: int = 100,
     kb: Optional[FinancialKnowledgeBase] = None,
@@ -105,7 +105,7 @@ def ingest_regulation_file(
 
     Args:
         file_path: 文件路径（.pdf/.docx/.txt）
-        category: 默认分类（如果能识别到“第X章”，则优先用章标题作为 category）
+        category: 默认分类
         regulation_type: 监管类型（写入 knowledge.regulation_type）
         source: 文档来源（document.source）；不传则默认使用 file_path
         min_chunk_size: 过滤短片段阈值（字符数）
@@ -140,15 +140,15 @@ def ingest_regulation_file(
     )
 
     knowledge_items: List[Dict] = []
-    current_chapter: Optional[str] = None
 
     for chunk in chunks:
-        current_chapter, article_number, section_number = _extract_regulation_structure(
-            chunk, current_chapter
+        # 仅存储“条”（第X条）。识别到“章”（第X章）则丢弃，不写入任何字段，也不跨 chunk 沿用。
+        _ignored_chapter, article_number, _ignored_section_number = _extract_regulation_structure(
+            chunk, None
         )
 
-        # 优先用“第X章”当分类；否则回退到入参 category
-        item_category = current_chapter or category
+        # 分类字段始终使用调用方传入的 category；
+        item_category = category
 
         knowledge_items.append(
             {
@@ -156,7 +156,7 @@ def ingest_regulation_file(
                 "category": item_category,
                 "regulation_type": regulation_type,
                 "article_number": article_number,
-                "section_number": section_number,
+                "section_number": None,
             }
         )
 
@@ -196,7 +196,7 @@ def answer_question(question: str) -> dict:
 
     # 检索参数：优先从环境变量读，便于调参；不给则使用合理默认值
     top_k = int(os.getenv("FINREGQA_TOP_K", "8"))
-    threshold = float(os.getenv("FINREGQA_THRESHOLD", "0.55"))
+    threshold = float(os.getenv("FINREGQA_THRESHOLD", "0.05"))
 
     raw_results = kb.search(query=q, top_k=top_k, threshold=threshold)
 
@@ -525,8 +525,11 @@ if __name__ == "__main__":
 
         # 测试问答
         results = answer_question("风险权重")
+        print("answer:\n")
         print(results["answer"])
+        print("references:\n")
         print(results["references"])
+        print("raw_results:\n")
         print(results["raw_results"])
     
     except Exception as e:
