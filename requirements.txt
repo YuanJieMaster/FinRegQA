@@ -4,6 +4,7 @@
 # LangChain核心库
 langchain>=0.1.0
 langchain-community>=0.0.10
+langchain-openai>=0.1.0
 
 # PDF处理 - PyMuPDF (fitz)
 PyMuPDF>=1.23.0
