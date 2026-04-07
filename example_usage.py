@@ -602,9 +602,10 @@ if __name__ == "__main__":
 
         # 测试导入
         # ingest_regulation_file("商业银行资本管理办法.pdf", "商业银行资本管理办法", "商业银行资本管理办法")
+        # ingest_regulation_file("1.关于加强浙江省打击保险领域违法犯罪协调配合工作的通知.docx", "保险监管", "监管类型")
 
         # 测试问答
-        results = answer_question("我国当前金融监管体系中，国家金融监督管理总局的主要监管职责是什么？")
+        results = answer_question("商业银行资本充足率最低要求是多少？")
         print("answer:\n")
         print(results["answer"])
         print("references:\n")

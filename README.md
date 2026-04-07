@@ -32,7 +32,8 @@ pip install -r requirements.txt
 ### 运行测试
 
 ```bash
-python test_financial_splitter.py
+python api.py
+streamlit run frontend.py
 ```
 
 ### 基本使用

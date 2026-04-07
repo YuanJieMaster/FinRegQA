@@ -44,9 +44,10 @@ class FinancialRegulationSplitter(TextSplitter):
         # 金融监管文件的典型层级结构分隔符
         # 优先级：章 > 条 > 款 > 项 > 句子级分隔符
         self.separators = separators or [
+            r"[零一二三四五六七八九十百千\d]+[、]",
             r"第[零一二三四五六七八九十百千\d]+条",  # 条款标题
             r"第[零一二三四五六七八九十百千\d]+款",  # 款项标题
-            # r"[（(][一二三四五六七八九十\d]+[)）]",  # 项（括号形式）
+            r"[（(][一二三四五六七八九十\d]+[)）]",  # 项（括号形式）
             r"第[零一二三四五六七八九十百千\d]+章",  # 章节标题
             # r"。",  # 句号
             # r"；",  # 分号
@@ -130,7 +131,7 @@ class FinancialRegulationSplitter(TextSplitter):
                 chunk_with_sep = text[match.start():next_match_start].strip()
                 
                 # 如果chunk过大，递归分割
-                if len(chunk_with_sep) > 2000 and remaining_separators:
+                if len(chunk_with_sep) > 300 and remaining_separators:
                     sub_chunks = self._split_text_recursive(chunk_with_sep, remaining_separators)
                     chunks.extend(sub_chunks)
                 else:

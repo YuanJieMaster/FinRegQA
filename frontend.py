@@ -13,6 +13,11 @@ import requests
 import json
 from pathlib import Path
 
+# HTTP 请求超时（秒）：问答/嵌入与 LLM 较慢，导入大文档更久
+REQUEST_TIMEOUT_ANSWER = 180
+REQUEST_TIMEOUT_INGEST = 600
+REQUEST_TIMEOUT_STATS = 120
+
 # 页面配置
 st.set_page_config(
     page_title="金融监管知识库",
@@ -83,7 +88,8 @@ st.title("📚 金融监管知识库")
 st.markdown("基于 PostgreSQL + FAISS + LLM 的智能问答系统")
 
 # 创建标签页
-tab1, tab2, tab3, tab4 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息", "🔍 检索测试"])
+# tab1, tab2, tab3, tab4 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息", "🔍 检索测试"])
+tab1, tab2, tab3 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息"])
 
 # ============================================================================
 # 标签页 1：问答
@@ -113,7 +119,7 @@ with tab1:
                 response = requests.post(
                     f"{api_url}/api/answer",
                     json={"question": question},
-                    timeout=30
+                    timeout=REQUEST_TIMEOUT_ANSWER,
                 )
                 
                 if response.status_code == 200:
@@ -169,8 +175,8 @@ with tab2:
     with col1:
         uploaded_file = st.file_uploader(
             "选择文件 (PDF/DOCX/TXT)",
-            type=["pdf", "docx", "txt"],
-            help="支持 PDF、Word 文档、纯文本文件"
+            type=["pdf", "docx", "doc", "txt"],
+            help="支持 PDF、Word（.doc/.docx）、纯文本（服务端需 textxtract[pdf,doc,docx]）"
         )
         
         category = st.selectbox(
@@ -239,7 +245,7 @@ with tab2:
                         f"{api_url}/api/ingest",
                         files=files,
                         data=data,
-                        timeout=60
+                        timeout=REQUEST_TIMEOUT_INGEST,
                     )
                     
                     if response.status_code == 200:
@@ -276,7 +282,9 @@ with tab3:
     
     with st.spinner("加载统计信息..."):
         try:
-            response = requests.get(f"{api_url}/api/stats", timeout=10)
+            response = requests.get(
+                f"{api_url}/api/stats", timeout=REQUEST_TIMEOUT_STATS
+            )
             
             if response.status_code == 200:
                 stats = response.json()
@@ -335,30 +343,30 @@ with tab3:
 # 标签页 4：检索测试
 # ============================================================================
 
-with tab4:
-    st.header("检索测试")
-    st.markdown("快速测试几个常见问题")
+# with tab4:
+#     st.header("检索测试")
+#     st.markdown("快速测试几个常见问题")
     
-    test_questions = [
-        "商业银行资本充足率最低要求是什么？",
-        "流动性覆盖率应当不低于多少？",
-        "银行应如何开展风险管理？",
-        "信息披露有什么要求？",
-        "内部控制制度包括哪些内容？",
-    ]
+#     test_questions = [
+#         "商业银行资本充足率最低要求是什么？",
+#         "流动性覆盖率应当不低于多少？",
+#         "银行应如何开展风险管理？",
+#         "信息披露有什么要求？",
+#         "内部控制制度包括哪些内容？",
+#     ]
     
-    for i, q in enumerate(test_questions, 1):
-        if st.button(f"🔍 {i}. {q}", use_container_width=True):
-            st.session_state.question_input = q
-            st.rerun()
+#     for i, q in enumerate(test_questions, 1):
+#         if st.button(f"🔍 {i}. {q}", use_container_width=True):
+#             st.session_state.question_input = q
+#             st.rerun()
     
-    st.markdown("---")
-    st.markdown("### 💡 提示")
-    st.markdown("""
-    - 点击上方问题快速测试
-    - 或在"问答"标签页输入自定义问题
-    - 系统会自动检索相关法规并生成答案
-    """)
+#     st.markdown("---")
+#     st.markdown("### 💡 提示")
+#     st.markdown("""
+#     - 点击上方问题快速测试
+#     - 或在"问答"标签页输入自定义问题
+#     - 系统会自动检索相关法规并生成答案
+#     """)
 
 
 # ============================================================================
