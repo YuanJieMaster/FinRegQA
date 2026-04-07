@@ -8,6 +8,8 @@ Financial Knowledge Base System - Usage Example
 import os
 import re
 from typing import Dict, List, Optional, Tuple
+
+from LLM import generate_rag_answer
 from knowledge_base import FinancialKnowledgeBase
 from financial_text_splitter import FinancialRegulationSplitter, load_financial_document
 from dotenv import load_dotenv
@@ -227,80 +229,16 @@ def answer_question(question: str) -> dict:
 
     # 优先尝试大模型 RAG 生成（LangChain）；失败时回退到下方抽取式回答
     top_refs = references[: min(5, len(references))]
-    llm_model = os.getenv("FINREGQA_LLM_MODEL", "gpt-4o-mini")
-    llm_temperature = float(os.getenv("FINREGQA_LLM_TEMPERATURE", "0.1"))
-    llm_base_url = os.getenv("FINREGQA_LLM_BASE_URL")
-    llm_api_key = os.getenv("FINREGQA_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
 
     try:
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.prompts import ChatPromptTemplate
-        from langchain_openai import ChatOpenAI
-
-        context_lines = []
-        for i, ref in enumerate(top_refs, 1):
-            doc = ref.get("document_name") or "未知文档"
-            art = ref.get("article_number") or "未标明条款"
-            sec = ref.get("section_number") or ""
-            sim = ref.get("similarity")
-            sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
-            content = (ref.get("content") or "").strip()
-            if len(content) > 500:
-                content = content[:500] + "…"
-            context_lines.append(
-                f"【依据{i}】文档：{doc}｜条款：{art} {sec}｜相似度：{sim_text}\n{content}"
-            )
-
-        context_text = "\n\n".join(context_lines)
-
-        prompt = ChatPromptTemplate.from_template(
-            """
-你是一名严谨的金融监管问答助手。请严格基于“法规依据”回答，不得编造。
-
-回答规则：
-1. 只允许使用提供的法规依据。
-2. 若依据不足，明确写“依据不足，无法确定”。
-3. 先给出结论，再给出依据说明。
-4. 涉及比例、数值、期限时，必须在依据中指出来源条款。
-
-用户问题：
-{question}
-
-法规依据：
-{context}
-
-请按以下格式输出：
-【结论】
-...
-
-【依据说明】
-...
-
-【适用边界/风险提示】
-...
-""".strip()
-        )
-
-        llm_kwargs = {
-            "model": llm_model,
-            "temperature": llm_temperature,
-        }
-        if llm_base_url:
-            llm_kwargs["base_url"] = llm_base_url
-        if llm_api_key:
-            llm_kwargs["api_key"] = llm_api_key
-
-        llm = ChatOpenAI(**llm_kwargs)
-        chain = prompt | llm | StrOutputParser()
-        answer = chain.invoke({"question": q, "context": context_text})
-
+        answer = generate_rag_answer(q, top_refs).content
         return {
             "answer": answer,
             "references": top_refs,
             "raw_results": raw_results,
         }
-    except Exception:
-        # 打印错误
+    except Exception as e:
+        # Keep the extractive fallback path if model generation fails.
         import sys
         print(f"Error: {e}", file=sys.stderr)
 

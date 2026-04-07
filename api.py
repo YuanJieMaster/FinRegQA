@@ -18,6 +18,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from dotenv import load_dotenv
+from LLM import load_llm_config
 from example_usage import answer_question, ingest_regulation_file, get_default_kb, close_default_kb
 
 # 加载环境变量
@@ -266,11 +267,13 @@ def api_stats():
 @app.on_event("startup")
 async def startup_event():
     """应用启动时执行"""
+    llm_config = load_llm_config()
     print("=" * 80)
     print("金融知识库 FastAPI 服务启动")
     print("=" * 80)
-    print(f"LLM 模型: {os.getenv('FINREGQA_LLM_MODEL', 'gpt-4o-mini')}")
-    print(f"LLM Base URL: {os.getenv('FINREGQA_LLM_BASE_URL', '(默认 OpenAI)')}")
+    print(f"LLM Provider: {llm_config.provider}")
+    print(f"LLM 模型: {llm_config.model}")
+    print(f"LLM Base URL: {llm_config.base_url}")
     print(f"数据库: {os.getenv('FINREGQA_DB_HOST', 'localhost')}:{os.getenv('FINREGQA_DB_PORT', '5432')}")
     print("=" * 80)
 
