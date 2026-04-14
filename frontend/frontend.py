@@ -18,6 +18,16 @@ REQUEST_TIMEOUT_ANSWER = 180
 REQUEST_TIMEOUT_INGEST = 600
 REQUEST_TIMEOUT_STATS = 120
 
+REGION_OPTIONS = [
+    "全国",
+    "浙江省",
+    "江苏省",
+    "上海市",
+    "北京市",
+    "广东省",
+    "其他（自定义）",
+]
+
 # 页面配置
 st.set_page_config(
     page_title="金融监管知识库",
@@ -107,12 +117,23 @@ with tab1:
             height=100,
             key="question_input"
         )
-        question_region = st.text_input(
+        question_region_option = st.selectbox(
             "地区筛选 (可选)",
-            placeholder="例如：浙江省",
-            help="填写后优先检索该地区法规，结果不足时会自动回退到全局检索",
-            key="question_region_input",
+            options=REGION_OPTIONS,
+            index=0,
+            help="优先检索所选地区法规，结果不足时会自动回退到全局检索",
+            key="question_region_select",
         )
+        question_region_custom = ""
+        if question_region_option == "其他（自定义）":
+            question_region_custom = st.text_input(
+                "自定义地区",
+                placeholder="例如：宁波市",
+                key="question_region_custom_input",
+            )
+        question_region = question_region_custom.strip() if question_region_option == "其他（自定义）" else question_region_option
+        if question_region == "全国":
+            question_region = None
     
     with col2:
         st.write("")
@@ -193,12 +214,21 @@ with tab2:
         )
     
     with col2:
-        region = st.text_input(
-            "地区 (可选)",
-            placeholder="例如：浙江省",
-            help="输入文档适用地区",
-            value="全国",
+        region_option = st.selectbox(
+            "地区",
+            options=REGION_OPTIONS,
+            index=0,
+            help="选择文档适用地区",
+            key="ingest_region_select",
         )
+        region_custom = ""
+        if region_option == "其他（自定义）":
+            region_custom = st.text_input(
+                "自定义地区",
+                placeholder="例如：杭州市",
+                key="ingest_region_custom_input",
+            )
+        region = region_custom.strip() if region_option == "其他（自定义）" else region_option
 
         regulation_type = st.text_input(
             "监管类型",

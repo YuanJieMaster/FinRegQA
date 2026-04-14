@@ -211,7 +211,7 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
     # 可选地区过滤：先按地区检索，结果不足时回退到全局检索补足
     raw_results = kb.search(query=q, top_k=top_k, threshold=threshold, region=normalized_region)
     # if normalized_region and len(raw_results) < max(2, min(top_k, 5)):
-    if normalized_region == None:
+    if normalized_region == "全国":
         fallback_results = kb.search(query=q, top_k=top_k, threshold=threshold)
         existing_ids = {r.get("knowledge_id") for r in raw_results}
         for item in fallback_results:
