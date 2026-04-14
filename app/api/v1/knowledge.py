@@ -18,6 +18,7 @@ router = APIRouter(prefix="/knowledge", tags=["知识库"])
 class QuestionRequest(BaseModel):
     """问答请求"""
     question: str
+    region: Optional[str] = None
 
 
 class QuestionResponse(BaseModel):
@@ -44,6 +45,7 @@ class StatsResponse(BaseModel):
     faiss_index_size: int
     category_distribution: dict
     regulation_distribution: dict
+    region_distribution: dict
 
 
 @router.post("/answer", response_model=QuestionResponse)
@@ -53,7 +55,7 @@ async def api_answer(req: QuestionRequest):
         raise HTTPException(status_code=400, detail="问题不能为空")
 
     try:
-        return answer_question(req.question)
+        return answer_question(req.question, region=req.region)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"问答失败: {str(e)}")
 
@@ -63,6 +65,7 @@ async def api_ingest(
     file: UploadFile = File(...),
     category: str = Form(...),
     regulation_type: str = Form(...),
+    region: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     min_chunk_size: int = Form(1),
     keep_separator: bool = Form(True),
@@ -93,6 +96,7 @@ async def api_ingest(
             file_path=temp_path,
             category=category,
             regulation_type=regulation_type,
+            region=region,
             source=source,
             min_chunk_size=min_chunk_size,
             keep_separator=keep_separator,

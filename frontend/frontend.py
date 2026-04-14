@@ -107,6 +107,12 @@ with tab1:
             height=100,
             key="question_input"
         )
+        question_region = st.text_input(
+            "地区筛选 (可选)",
+            placeholder="例如：浙江省",
+            help="填写后优先检索该地区法规，结果不足时会自动回退到全局检索",
+            key="question_region_input",
+        )
     
     with col2:
         st.write("")
@@ -118,7 +124,7 @@ with tab1:
             try:
                 response = requests.post(
                     f"{api_url}/api/knowledge/answer",
-                    json={"question": question},
+                    json={"question": question, "region": question_region or None},
                     timeout=REQUEST_TIMEOUT_ANSWER,
                 )
                 
@@ -139,6 +145,7 @@ with tab1:
                                     st.markdown(f"**文档**: {ref.get('document_name', '未知')}")
                                     st.markdown(f"**条款**: {ref.get('article_number', '未标明')} {ref.get('section_number', '')}")
                                     st.markdown(f"**分类**: {ref.get('category', '未分类')}")
+                                    st.markdown(f"**地区**: {ref.get('region', '未标注')}")
                                     st.markdown(f"**监管类型**: {ref.get('regulation_type', '未标明')}")
                                 with col2:
                                     sim = ref.get('similarity')
@@ -186,6 +193,13 @@ with tab2:
         )
     
     with col2:
+        region = st.text_input(
+            "地区 (可选)",
+            placeholder="例如：浙江省",
+            help="输入文档适用地区",
+            value="全国",
+        )
+
         regulation_type = st.text_input(
             "监管类型",
             placeholder="例如：商业银行监管",
@@ -235,6 +249,7 @@ with tab2:
                     data = {
                         "category": category,
                         "regulation_type": regulation_type,
+                        "region": region or None,
                         "source": source or None,
                         "min_chunk_size": min_chunk_size,
                         "keep_separator": keep_separator,
@@ -329,6 +344,18 @@ with tab3:
                             st.write(f"- **{reg_type}**: {count}")
                 else:
                     st.info("暂无监管类型数据")
+
+                # 地区分布
+                st.markdown("### 🌍 地区分布")
+                if stats.get("region_distribution"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.bar_chart(stats["region_distribution"])
+                    with col2:
+                        for region_name, count in stats["region_distribution"].items():
+                            st.write(f"- **{region_name}**: {count}")
+                else:
+                    st.info("暂无地区数据")
             
             else:
                 st.error(f"❌ 获取统计信息失败: {response.json().get('detail', '未知错误')}")

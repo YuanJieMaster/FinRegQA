@@ -94,6 +94,7 @@ def ingest_regulation_file(
     category: str,
     regulation_type: str,
     *,
+    region: Optional[str] = None,
     source: Optional[str] = None,
     min_chunk_size: int = 1,
     keep_separator: bool = True,
@@ -111,6 +112,7 @@ def ingest_regulation_file(
         file_path: 文件路径（.pdf/.docx/.txt）
         category: 默认分类
         regulation_type: 监管类型（写入 knowledge.regulation_type）
+        region: 地区（可选；当前用于文档来源信息补充）
         source: 文档来源（document.source）；不传则默认使用 file_path
         min_chunk_size: 过滤短片段阈值（字符数）
         keep_separator: 是否保留“第X章/第X条”等结构标识
@@ -135,7 +137,8 @@ def ingest_regulation_file(
 
     file_name = doc.metadata.get("file_name") or os.path.basename(file_path)
     file_type = (doc.metadata.get("file_type") or "").lstrip(".")
-    doc_source = source or doc.metadata.get("source") or file_path
+    base_source = source or doc.metadata.get("source") or file_path
+    doc_source = f"{base_source} | 地区: {region}" if region else base_source
 
     document_id = kb.add_document(
         name=file_name,
@@ -158,6 +161,7 @@ def ingest_regulation_file(
             {
                 "content": chunk.strip(),
                 "category": item_category,
+                "region": region,
                 "regulation_type": regulation_type,
                 "article_number": article_number,
                 "section_number": None,
@@ -180,7 +184,7 @@ def ingest_regulation_file(
     }
 
 
-def answer_question(question: str) -> dict:
+def answer_question(question: str, region: Optional[str] = None) -> dict:
     """
     输入用户问题，返回：
     - answer: 生成的自然语言答案（优先走大模型RAG生成）
@@ -202,13 +206,28 @@ def answer_question(question: str) -> dict:
     top_k = int(os.getenv("FINREGQA_TOP_K", "8"))
     threshold = float(os.getenv("FINREGQA_THRESHOLD", "0.05"))
 
-    raw_results = kb.search(query=q, top_k=top_k, threshold=threshold)
+    normalized_region = (region or "").strip() or None
+
+    # 可选地区过滤：先按地区检索，结果不足时回退到全局检索补足
+    raw_results = kb.search(query=q, top_k=top_k, threshold=threshold, region=normalized_region)
+    # if normalized_region and len(raw_results) < max(2, min(top_k, 5)):
+    if normalized_region == None:
+        fallback_results = kb.search(query=q, top_k=top_k, threshold=threshold)
+        existing_ids = {r.get("knowledge_id") for r in raw_results}
+        for item in fallback_results:
+            kid = item.get("knowledge_id")
+            if kid not in existing_ids:
+                raw_results.append(item)
+                existing_ids.add(kid)
+            if len(raw_results) >= top_k:
+                break
 
     references = [
         {
             "knowledge_id": r.get("knowledge_id"),
             "document_name": r.get("document_name"),
             "category": r.get("category"),
+            "region": r.get("region"),
             "regulation_type": r.get("regulation_type"),
             "article_number": r.get("article_number"),
             "section_number": r.get("section_number"),
@@ -262,7 +281,7 @@ def answer_question(question: str) -> dict:
 
 回答规则：
 1. 只允许使用提供的法规依据。
-2. 若依据不足，明确写“依据不足，无法确定”。
+
 3. 先给出结论，再给出依据说明。
 4. 涉及比例、数值、期限时，必须在依据中指出来源条款。
 

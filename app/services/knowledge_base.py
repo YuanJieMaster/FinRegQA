@@ -138,6 +138,7 @@ class KnowledgeBaseService:
                     document_id INTEGER NOT NULL REFERENCES document(id) ON DELETE CASCADE,
                     content TEXT NOT NULL,
                     category VARCHAR(100),
+                    region VARCHAR(100),
                     regulation_type VARCHAR(100),
                     article_number VARCHAR(50),
                     section_number VARCHAR(50),
@@ -158,9 +159,16 @@ class KnowledgeBaseService:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 兼容已存在的旧表结构：补齐 region 字段
+            cursor.execute("""
+                ALTER TABLE knowledge
+                ADD COLUMN IF NOT EXISTS region VARCHAR(100)
+            """)
             
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_document_id ON knowledge(document_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge(category)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_region ON knowledge(region)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_article ON knowledge(article_number)")
             
             conn.commit()
@@ -236,9 +244,17 @@ class KnowledgeBaseService:
                     try:
                         cursor.execute("SAVEPOINT kb_item")
                         cursor.execute("""
-                            INSERT INTO knowledge (document_id, content, category, regulation_type, article_number, section_number)
-                            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-                        """, (document_id, item['content'], item.get('category'), item.get('regulation_type'), item.get('article_number'), item.get('section_number')))
+                            INSERT INTO knowledge (document_id, content, category, region, regulation_type, article_number, section_number)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+                        """, (
+                            document_id,
+                            item['content'],
+                            item.get('category'),
+                            item.get('region'),
+                            item.get('regulation_type'),
+                            item.get('article_number'),
+                            item.get('section_number')
+                        ))
                         
                         knowledge_id = cursor.fetchone()[0]
                         faiss_id = int(self.faiss_index.ntotal)
@@ -272,7 +288,7 @@ class KnowledgeBaseService:
             if conn:
                 self._return_connection(conn)
     
-    def search(self, query: str, top_k: int = 5, threshold: float = 0.7) -> List[Dict]:
+    def search(self, query: str, top_k: int = 5, threshold: float = 0.7, region: Optional[str] = None) -> List[Dict]:
         """检索知识点"""
         start_time = time.time()
         try:
@@ -298,10 +314,18 @@ class KnowledgeBaseService:
                     if knowledge_id is None:
                         continue
                     
-                    cursor.execute("""
-                        SELECT k.id, k.content, k.category, k.regulation_type, k.article_number, k.section_number, d.name
-                        FROM knowledge k JOIN document d ON k.document_id = d.id WHERE k.id = %s
-                    """, (knowledge_id,))
+                    if region:
+                        cursor.execute("""
+                            SELECT k.id, k.content, k.category, k.region, k.regulation_type, k.article_number, k.section_number, d.name
+                            FROM knowledge k
+                            JOIN document d ON k.document_id = d.id
+                            WHERE k.id = %s AND k.region = %s
+                        """, (knowledge_id, region))
+                    else:
+                        cursor.execute("""
+                            SELECT k.id, k.content, k.category, k.region, k.regulation_type, k.article_number, k.section_number, d.name
+                            FROM knowledge k JOIN document d ON k.document_id = d.id WHERE k.id = %s
+                        """, (knowledge_id,))
                     
                     row = cursor.fetchone()
                     if row:
@@ -309,8 +333,8 @@ class KnowledgeBaseService:
                         if similarity >= threshold:
                             results.append({
                                 'knowledge_id': row[0], 'content': row[1], 'category': row[2],
-                                'regulation_type': row[3], 'article_number': row[4], 'section_number': row[5],
-                                'document_name': row[6], 'similarity': float(similarity), 'distance': float(distance)
+                                'region': row[3], 'regulation_type': row[4], 'article_number': row[5], 'section_number': row[6],
+                                'document_name': row[7], 'similarity': float(similarity), 'distance': float(distance)
                             })
                 
                 duration = time.time() - start_time
@@ -380,12 +404,21 @@ class KnowledgeBaseService:
             """)
             regulation_stats = {row[0]: row[1] for row in cursor.fetchall()}
 
+            cursor.execute("""
+                SELECT region, COUNT(*) as count
+                FROM knowledge
+                WHERE region IS NOT NULL
+                GROUP BY region
+            """)
+            region_stats = {row[0]: row[1] for row in cursor.fetchall()}
+
             return {
                 'document_count': doc_count,
                 'knowledge_count': knowledge_count,
                 'faiss_index_size': len(self.knowledge_id_map),
                 'category_distribution': category_stats,
-                'regulation_distribution': regulation_stats
+                'regulation_distribution': regulation_stats,
+                'region_distribution': region_stats
             }
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}")
