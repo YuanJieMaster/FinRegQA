@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import auth, users, knowledge
-from example_usage import close_default_kb
+from app.services.knowledge_app import close_default_kb
 
 
 app = FastAPI(

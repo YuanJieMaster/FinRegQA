@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
-from example_usage import answer_question, ingest_regulation_file, get_default_kb
+from app.services.knowledge_app import answer_question, ingest_regulation_file, get_default_kb
 
 router = APIRouter(prefix="/knowledge", tags=["知识库"])
 

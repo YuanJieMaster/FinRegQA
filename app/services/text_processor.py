@@ -12,8 +12,10 @@ class TextSplitterService:
     
     def __init__(self, separators: List[str] = None, min_chunk_size: int = 0, keep_separator: bool = True):
         self.separators = separators or [
+            r"[零一二三四五六七八九十百千\d]+[、]",
             r"第[零一二三四五六七八九十百千\d]+条",
             r"第[零一二三四五六七八九十百千\d]+款",
+            r"[（(][一二三四五六七八九十\d]+[)）]",  # 项（括号形式）
             r"第[零一二三四五六七八九十百千\d]+章",
         ]
         self.min_chunk_size = min_chunk_size
