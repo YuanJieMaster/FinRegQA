@@ -99,8 +99,12 @@ class KnowledgeBaseService:
                 with open(id_map_file, 'r') as f:
                     self.knowledge_id_map = json.load(f)
             else:
-                logger.warning(f"索引维度不匹配，将重建索引")
+                logger.warning(
+                    f"检测到现有FAISS索引维度={getattr(loaded_index, 'd', None)} "
+                    f"与当前 embedding_dim={self.embedding_dim} 不一致，已重建索引"
+                )
                 self.faiss_index = None
+                self.knowledge_id_map = {}
         
         if self.faiss_index is None:
             logger.info(f"创建新FAISS索引 (dim={self.embedding_dim})")
@@ -205,9 +209,24 @@ class KnowledgeBaseService:
             embeddings = self.embedding_model.encode(contents, batch_size=32, show_progress_bar=True, convert_to_numpy=True)
             
             embeddings_f32 = embeddings.astype(np.float32, copy=False)
-            if not self.faiss_index.is_trained and embeddings_f32.shape[0] >= 10:
-                logger.info("训练FAISS索引")
-                self.faiss_index.train(embeddings_f32)
+            if embeddings_f32.ndim != 2 or embeddings_f32.shape[1] != self.embedding_dim:
+                raise ValueError(
+                    f"嵌入向量维度不匹配: embeddings.shape={embeddings_f32.shape}, expected_dim={self.embedding_dim}"
+                )
+
+            if not self.faiss_index.is_trained:
+                n_train = int(embeddings_f32.shape[0])
+                nlist = int(getattr(self.faiss_index, "nlist", 0) or 0)
+                if nlist and n_train < nlist:
+                    logger.warning(
+                        f"训练样本数({n_train})小于nlist({nlist})，已自动降级为 IndexFlatL2 以保证可用性"
+                    )
+                    if int(getattr(self.faiss_index, "ntotal", 0) or 0) != 0:
+                        raise RuntimeError("FAISS索引已包含向量，无法在非空索引上自动降级类型")
+                    self.faiss_index = faiss.IndexFlatL2(self.embedding_dim)
+                else:
+                    logger.info("训练FAISS索引")
+                    self.faiss_index.train(embeddings_f32)
             
             for i in range(0, len(knowledge_items), batch_size):
                 batch_items = knowledge_items[i:i+batch_size]
@@ -231,8 +250,11 @@ class KnowledgeBaseService:
                         cursor.execute("RELEASE SAVEPOINT kb_item")
                     except Exception as e:
                         logger.warning(f"插入知识点失败: {e}")
-                        cursor.execute("ROLLBACK TO SAVEPOINT kb_item")
-                        cursor.execute("RELEASE SAVEPOINT kb_item")
+                        try:
+                            cursor.execute("ROLLBACK TO SAVEPOINT kb_item")
+                            cursor.execute("RELEASE SAVEPOINT kb_item")
+                        except Exception:
+                            pass
                         fail_count += 1
                 
                 conn.commit()
@@ -341,7 +363,30 @@ class KnowledgeBaseService:
             doc_count = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM knowledge")
             knowledge_count = cursor.fetchone()[0]
-            return {'document_count': doc_count, 'knowledge_count': knowledge_count, 'faiss_index_size': len(self.knowledge_id_map)}
+
+            cursor.execute("""
+                SELECT category, COUNT(*) as count
+                FROM knowledge
+                WHERE category IS NOT NULL
+                GROUP BY category
+            """)
+            category_stats = {row[0]: row[1] for row in cursor.fetchall()}
+
+            cursor.execute("""
+                SELECT regulation_type, COUNT(*) as count
+                FROM knowledge
+                WHERE regulation_type IS NOT NULL
+                GROUP BY regulation_type
+            """)
+            regulation_stats = {row[0]: row[1] for row in cursor.fetchall()}
+
+            return {
+                'document_count': doc_count,
+                'knowledge_count': knowledge_count,
+                'faiss_index_size': len(self.knowledge_id_map),
+                'category_distribution': category_stats,
+                'regulation_distribution': regulation_stats
+            }
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}")
             raise

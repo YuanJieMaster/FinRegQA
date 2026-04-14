@@ -8,8 +8,11 @@ Financial Knowledge Base System - Usage Example
 import os
 import re
 from typing import Dict, List, Optional, Tuple
-from knowledge_base import FinancialKnowledgeBase
-from financial_text_splitter import FinancialRegulationSplitter, load_financial_document
+from app.services.knowledge_base import KnowledgeBaseService as FinancialKnowledgeBase
+from app.services.text_processor import (
+    TextSplitterService as FinancialRegulationSplitter,
+    load_financial_document,
+)
 from dotenv import load_dotenv
 load_dotenv()
 

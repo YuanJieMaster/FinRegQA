@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api.v1 import auth, users
+from app.api.v1 import auth, users, knowledge
+from example_usage import close_default_kb
 
 
 app = FastAPI(
@@ -70,6 +71,7 @@ async def startup_event():
 async def shutdown_event():
     """应用关闭时执行清理"""
     print(f"🔴 {settings.APP_NAME} 已关闭")
+    close_default_kb()
 
 
 @app.get("/health", tags=["系统"])
@@ -81,6 +83,7 @@ async def health_check():
 # 注册API路由
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(users.router, prefix=settings.API_V1_PREFIX)
+app.include_router(knowledge.router, prefix="/api")
 
 
 @app.get("/", tags=["系统"])
