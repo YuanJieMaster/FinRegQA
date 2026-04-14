@@ -1,138 +1,124 @@
-# 金融制度文本分块器
+# FinRegQA 金融制度知识问答系统
 
-基于LangChain的金融监管文档智能分块工具，专为金融制度文本的层级结构设计。
+基于RAG技术的金融制度知识问答系统后端API。
 
-## 功能特性
+## 项目结构
 
-### 1. 多格式文档加载
-- **PDF**: 使用PyMuPDF提取，保留文本结构
-- **DOCX**: 使用python-docx提取，保留段落格式  
-- **TXT**: 直接读取纯文本文件
-
-### 2. 智能分块策略
-- 按金融监管文件的层级结构分割：**章 > 条 > 款 > 项**
-- 保持法规条文的完整性，避免语义割裂
-- 过滤小于200字的片段，确保知识点有效性
-- 递归分割过大片段，优化检索效率
-
-### 3. 文本清洗
-- 去除水印（"内部资料"、"机密"等）
-- 去除页眉页脚（页码、日期等）
-- 规范化空白字符
-- 去除PDF提取异常字符
+```
+FinRegQA/
+├── main.py                    # FastAPI应用入口
+├── requirements.txt           # 依赖包
+├── .env.example               # 环境变量示例
+├── docker-compose.yml         # Docker编排配置
+├── README.md                  # 项目文档
+├── app/
+│   ├── __init__.py           # 应用模块入口
+│   ├── core/                  # 核心模块
+│   │   ├── __init__.py
+│   │   ├── config/            # 配置管理
+│   │   │   ├── __init__.py
+│   │   │   └── settings.py    # 配置类
+│   │   ├── database.py        # 数据库连接
+│   │   ├── security.py        # JWT/密码安全
+│   │   └── email.py           # QQ邮箱发送
+│   ├── models/                # 数据模型
+│   │   └── user.py           # 用户模型
+│   ├── schemas/               # Pydantic schemas
+│   │   └── user.py           # 用户schemas
+│   ├── crud/                  # CRUD操作
+│   │   └── user.py           # 用户CRUD
+│   ├── api/                   # API路由
+│   │   └── v1/
+│   │       ├── __init__.py
+│   │       ├── auth.py       # 认证API
+│   │       └── users.py      # 用户API
+│   └── services/              # 业务服务
+│       ├── __init__.py
+│       ├── knowledge_base.py  # 知识库服务
+│       └── text_processor.py # 文本处理服务
+├── scripts/                    # 脚本目录
+│   └── init_db.py            # 数据库初始化
+├── data/                      # 数据目录
+│   └── faiss_index/          # FAISS索引
+└── docs/                      # 文档目录
+```
 
 ## 快速开始
 
-### 安装依赖
+### 1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 运行测试
+### 2. 配置环境变量
 
 ```bash
-python api.py
-streamlit run frontend.py
+cp .env.example .env
 ```
 
-### 基本使用
+编辑 `.env` 文件，填写以下配置：
 
-```python
-from financial_text_splitter import (
-    FinancialRegulationSplitter,
-    load_financial_document
-)
+```env
+# MySQL数据库
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=finregqa
 
-# 1. 加载文档
-document = load_financial_document("your_file.pdf", clean_text=True)
+# JWT密钥
+SECRET_KEY=your-super-secret-key-change-in-production
 
-# 2. 初始化分块器
-splitter = FinancialRegulationSplitter(
-    min_chunk_size=200,  # 最小分块大小
-    keep_separator=True  # 保留章节标识符
-)
-
-# 3. 分块
-chunks = splitter.split_text(document.page_content)
-
-print(f"知识点数量: {len(chunks)}")
+# QQ邮箱SMTP
+SMTP_USER=your_qq_email@qq.com
+SMTP_PASSWORD=your_qq_authorization_code
 ```
 
-## 核心组件
+### 3. 初始化数据库
 
-### FinancialRegulationSplitter
-自定义文本分块器，继承自LangChain的TextSplitter。
-
-**参数:**
-- `separators`: 分隔符列表（默认：章/条/款/项/句号/分号）
-- `min_chunk_size`: 最小分块大小，默认200字符
-- `keep_separator`: 是否保留分隔符，默认True
-
-### load_financial_document
-文档加载函数，支持多种格式。
-
-**参数:**
-- `file_path`: 文件路径
-- `clean_text`: 是否清洗文本，默认True
-
-**返回:** LangChain Document对象
-
-### clean_financial_text
-文本清洗函数，去除水印和页眉页脚。
-
-## 金融场景适配说明
-
-### 为什么需要自定义分块器？
-
-1. **结构化特征**: 金融监管文件采用"章-条-款-项"的严格层级结构，通用分块器无法识别
-2. **语义完整性**: 法规条文需要保持完整，避免在检索时出现语义割裂
-3. **长度控制**: 金融条文长度差异大，需要智能过滤和递归分割
-4. **噪音过滤**: PDF提取的文本包含大量水印、页码等噪音，影响检索质量
-
-### 分块策略优先级
-
-```
-第X章（章节）> 第X条（条款）> 第X款（款项）> (X)（项）> 。（句号）> ；（分号）
+```bash
+python scripts/init_db.py
 ```
 
-优先使用高层级分隔符，确保保留文档的逻辑结构。
+### 4. 启动服务
 
-## 测试输出示例
-
-```
-📊 分块统计:
-  - 知识点总数: 15 个
-  - 平均长度: 456 字符
-  - 最短片段: 203 字符
-  - 最长片段: 892 字符
-
-📈 长度分布:
-  - 200-500字: 8 个 (53.3%)
-  - 500-1000字: 6 个 (40.0%)
-  - 1000-2000字: 1 个 (6.7%)
-
-🏗️ 文档结构分析:
-  - 检测到章节: 5 个
-  - 检测到条款: 13 个
+```bash
+python main.py
 ```
 
-## 后续扩展
+访问 API 文档: http://localhost:8000/docs
 
-可基于此分块器构建完整的金融监管问答系统：
+## API接口
 
-1. **向量化**: 使用embedding模型将chunks转为向量
-2. **向量存储**: 存入ChromaDB/Faiss等向量数据库
-3. **检索增强**: 实现RAG（Retrieval-Augmented Generation）
-4. **问答系统**: 结合LLM实现智能问答
+### 认证接口
 
-## 依赖说明
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| POST | /api/v1/auth/register | 用户注册 |
+| POST | /api/v1/auth/login | 用户登录 |
+| POST | /api/v1/auth/logout | 用户登出 |
+| POST | /api/v1/auth/refresh | 刷新Token |
+| POST | /api/v1/auth/password/change | 修改密码 |
+| POST | /api/v1/auth/password/reset-request | 请求密码重置 |
+| POST | /api/v1/auth/password/reset-confirm | 确认密码重置 |
+| GET | /api/v1/auth/verify-email | 验证邮箱 |
 
-- `langchain`: LangChain核心库
-- `PyMuPDF`: PDF文本提取
-- `python-docx`: DOCX文档处理
-- `regex`: 正则表达式增强
+### 用户接口
 
-## 许可证
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| GET | /api/v1/users/me | 获取个人信息 |
+| PUT | /api/v1/users/me | 修改个人信息 |
+| GET | /api/v1/users/me/sessions | 获取会话列表 |
+| DELETE | /api/v1/users/me/sessions/{id} | 撤销会话 |
 
-MIT License
+## 技术栈
+
+- **Web框架**: FastAPI
+- **数据库**: MySQL (用户数据), PostgreSQL (知识库)
+- **向量检索**: FAISS
+- **文本嵌入**: sentence-transformers
+- **认证**: JWT (python-jose)
+- **密码加密**: bcrypt (passlib)
+- **邮件发送**: QQ邮箱 SMTP
