@@ -82,10 +82,12 @@ async def api_ingest(
 
     temp_path = None
     try:
-        file_content = await file.read()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-            temp_file.write(file_content)
-            temp_path = temp_file.name
+        # 保存临时文件
+        temp_path = f"/tmp/{file.filename}"
+        os.makedirs("/tmp", exist_ok=True)
+        with open(temp_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
 
         return ingest_regulation_file(
             file_path=temp_path,
