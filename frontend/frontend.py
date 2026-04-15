@@ -457,6 +457,7 @@ def show_login_page():
                         result = response.json()
                         save_tokens(result["access_token"], result["refresh_token"])
                         st.session_state.user_info = {"username": username}
+                        st.session_state.current_page = "main"
                         st.success("登录成功！")
                         st.rerun()
                     else:
@@ -981,6 +982,10 @@ def show_main_page():
 
 def main():
     """主程序入口"""
+    # 如果已认证，自动跳转到主页
+    if st.session_state.get("authenticated", False):
+        st.session_state.current_page = "main"
+    
     current_page = st.session_state.get("current_page", "login")
     
     if current_page == "login":
