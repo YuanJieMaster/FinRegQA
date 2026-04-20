@@ -57,6 +57,8 @@ logs/
 # Environment variables
 .env
 .env.local
+AGENTS.md
+LLM/llm_cache.json
 
 # OS
 .DS_Store
