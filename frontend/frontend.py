@@ -669,7 +669,7 @@ def show_main_page():
     st.markdown("""
     <div class="page-header">
         <h1 class="main-title">🏛️ 金融监管知识库</h1>
-        <p class="main-subtitle">基于 PostgreSQL + FAISS + LLM 的智能问答系统</p>
+        <p class="main-subtitle">基于 MySQL + Milvus + LLM 的智能问答系统</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -912,7 +912,7 @@ def show_main_page():
                         st.metric("知识点数", stats["knowledge_count"])
                     
                     with col3:
-                        st.metric("索引大小", stats["faiss_index_size"])
+                        st.metric("向量数", stats.get("milvus_vector_count", stats.get("knowledge_count", 0)))
                     
                     with col4:
                         if stats["knowledge_count"] > 0:
@@ -970,7 +970,7 @@ def show_main_page():
     st.markdown("""
     <div class="footer">
         <p style="margin: 0;"><strong>🏛️ 金融监管知识库</strong> v1.0</p>
-        <p style="margin: 0.5rem 0 0 0;">基于 PostgreSQL + FAISS + LLM 智能问答系统</p>
+        <p style="margin: 0.5rem 0 0 0;">基于 MySQL + Milvus + LLM 智能问答系统</p>
         <p style="margin: 0.5rem 0 0 0; opacity: 0.7;">API 地址: """ + api_url_input + """</p>
     </div>
     """, unsafe_allow_html=True)

@@ -34,5 +34,5 @@ def get_db():
 
 def init_db():
     """初始化数据库"""
-    from app.models import User, PasswordResetToken, UserSession
+    from app.models import User, PasswordResetToken, UserSession, Document, Knowledge, Log
     Base.metadata.create_all(bind=engine)

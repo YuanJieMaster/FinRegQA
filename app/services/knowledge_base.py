@@ -1,49 +1,54 @@
 """
 FinRegQA 金融知识库服务
-Financial Knowledge Base Service
+Financial Knowledge Base Service - Using Milvus
 """
 import os
 import time
 import logging
-import json
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 
-import psycopg2
-from psycopg2 import pool
+from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
 import numpy as np
-import faiss
 from sentence_transformers import SentenceTransformer
+
+from app.core.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseService:
-    """金融知识库服务"""
+    """金融知识库服务 - 使用 Milvus 向量数据库"""
     
     def __init__(
         self,
-        db_host: str = "localhost",
-        db_port: int = 5432,
-        db_name: str = "financial_kb",
-        db_user: str = "postgres",
-        db_password: str = "postgres",
+        milvus_host: str = "localhost",
+        milvus_port: int = 19530,
+        milvus_user: str = "",
+        milvus_password: str = "",
+        collection_name: str = "financial_knowledge",
         embedding_model: str = "BAAI/bge-small-zh-v1.5",
-        faiss_index_path: str = "./data/faiss_index",
-        max_connections: int = 10,
-        embedding_dim: int = 768
+        embedding_dim: int = 768,
+        db_host: str = "localhost",
+        db_port: int = 3306,
+        db_name: str = "finregqa",
+        db_user: str = "root",
+        db_password: str = "root_password",
     ):
+        self.milvus_host = milvus_host
+        self.milvus_port = milvus_port
+        self.milvus_user = milvus_user
+        self.milvus_password = milvus_password
+        self.collection_name = collection_name
+        self.embedding_dim = embedding_dim
+        
         self.db_host = db_host
         self.db_port = db_port
         self.db_name = db_name
         self.db_user = db_user
         self.db_password = db_password
-        self.embedding_model_name = embedding_model
-        self.faiss_index_path = faiss_index_path
-        self.embedding_dim = embedding_dim
         
-        self.connection_pool = None
-        self._init_connection_pool(max_connections)
+        self._connect_milvus()
         
         logger.info(f"加载嵌入模型: {embedding_model}")
         self.embedding_model = SentenceTransformer(embedding_model)
@@ -56,140 +61,95 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.warning(f"无法读取模型向量维度: {e}")
         
-        self.faiss_index = None
-        self.knowledge_id_map = {}
-        self._init_faiss_index()
-        self._init_database()
+        self._init_collection()
     
-    def _init_connection_pool(self, max_connections: int):
-        """初始化PostgreSQL连接池"""
+    def _connect_milvus(self):
+        """连接 Milvus 服务器"""
+        alias = "default"
         try:
-            self.connection_pool = psycopg2.pool.SimpleConnectionPool(
-                1, max_connections,
-                host=self.db_host, port=self.db_port, database=self.db_name,
-                user=self.db_user, password=self.db_password, connect_timeout=5
+            connections.connect(
+                alias=alias,
+                host=self.milvus_host,
+                port=self.milvus_port,
+                user=self.milvus_user,
+                password=self.milvus_password,
             )
-            logger.info(f"PostgreSQL连接池初始化成功 (最大连接数: {max_connections})")
+            logger.info(f"Milvus 连接成功: {self.milvus_host}:{self.milvus_port}")
         except Exception as e:
-            logger.error(f"连接池初始化失败: {e}")
+            logger.error(f"Milvus 连接失败: {e}")
             raise
     
-    def _get_connection(self):
-        """从连接池获取连接"""
-        conn = self.connection_pool.getconn()
-        conn.autocommit = False
-        return conn
-    
-    def _return_connection(self, conn):
-        """归还连接到连接池"""
-        if conn:
-            self.connection_pool.putconn(conn)
-    
-    def _init_faiss_index(self):
-        """初始化FAISS索引"""
-        os.makedirs(self.faiss_index_path, exist_ok=True)
-        index_file = os.path.join(self.faiss_index_path, "financial_kb.index")
-        id_map_file = os.path.join(self.faiss_index_path, "id_map.json")
-        
-        if os.path.exists(index_file) and os.path.exists(id_map_file):
-            logger.info("加载现有FAISS索引")
-            loaded_index = faiss.read_index(index_file)
-            if getattr(loaded_index, "d", None) == self.embedding_dim:
-                self.faiss_index = loaded_index
-                with open(id_map_file, 'r') as f:
-                    self.knowledge_id_map = json.load(f)
+    def _init_collection(self):
+        """初始化 Milvus Collection"""
+        if utility.has_collection(self.collection_name):
+            self.collection = Collection(self.collection_name)
+            
+            # 检查维度是否匹配
+            schema = self.collection.schema
+            embedding_field = next((f for f in schema.fields if f.name == "embedding"), None)
+            if embedding_field and embedding_field.params.get("dim") != self.embedding_dim:
+                logger.warning(f"Collection 向量维度不匹配: schema={embedding_field.params.get('dim')}, model={self.embedding_dim}")
+                logger.info("删除旧 Collection 并重建...")
+                utility.drop_collection(self.collection_name)
+                self._create_collection()
             else:
-                logger.warning(
-                    f"检测到现有FAISS索引维度={getattr(loaded_index, 'd', None)} "
-                    f"与当前 embedding_dim={self.embedding_dim} 不一致，已重建索引"
-                )
-                self.faiss_index = None
-                self.knowledge_id_map = {}
-        
-        if self.faiss_index is None:
-            logger.info(f"创建新FAISS索引 (dim={self.embedding_dim})")
-            quantizer = faiss.IndexFlatL2(self.embedding_dim)
-            self.faiss_index = faiss.IndexIVFFlat(quantizer, self.embedding_dim, 10, faiss.METRIC_L2)
-            self.knowledge_id_map = {}
-        
-        self.faiss_index.nprobe = 10
+                self.collection.load()
+                logger.info(f"已加载现有 Collection: {self.collection_name}")
+        else:
+            self._create_collection()
     
-    def _init_database(self):
-        """初始化PostgreSQL数据库表"""
-        conn = None
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS document (
-                    id SERIAL PRIMARY KEY,
-                    name VARCHAR(255) NOT NULL,
-                    source VARCHAR(255),
-                    file_type VARCHAR(50),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS knowledge (
-                    id SERIAL PRIMARY KEY,
-                    document_id INTEGER NOT NULL REFERENCES document(id) ON DELETE CASCADE,
-                    content TEXT NOT NULL,
-                    category VARCHAR(100),
-                    region VARCHAR(100),
-                    regulation_type VARCHAR(100),
-                    article_number VARCHAR(50),
-                    section_number VARCHAR(50),
-                    embedding_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS log (
-                    id SERIAL PRIMARY KEY,
-                    operation VARCHAR(50) NOT NULL,
-                    knowledge_id INTEGER REFERENCES knowledge(id) ON DELETE SET NULL,
-                    status VARCHAR(20),
-                    message TEXT,
-                    duration_ms FLOAT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # 兼容已存在的旧表结构：补齐 region 字段
-            cursor.execute("""
-                ALTER TABLE knowledge
-                ADD COLUMN IF NOT EXISTS region VARCHAR(100)
-            """)
-            
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_document_id ON knowledge(document_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge(category)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_region ON knowledge(region)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_article ON knowledge(article_number)")
-            
-            conn.commit()
-            logger.info("数据库表初始化成功")
-        except Exception as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"数据库初始化失败: {e}")
-            raise
-        finally:
-            if conn:
-                self._return_connection(conn)
+    def _create_collection(self):
+        """创建新的 Milvus Collection"""
+        fields = [
+            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+            FieldSchema(name="knowledge_id", dtype=DataType.INT64, description="知识库ID"),
+            FieldSchema(name="content", dtype=DataType.VARCHAR, max_length=65535, description="知识内容"),
+            FieldSchema(name="category", dtype=DataType.VARCHAR, max_length=255, description="分类"),
+            FieldSchema(name="region", dtype=DataType.VARCHAR, max_length=255, description="地区"),
+            FieldSchema(name="regulation_type", dtype=DataType.VARCHAR, max_length=255, description="法规类型"),
+            FieldSchema(name="article_number", dtype=DataType.VARCHAR, max_length=50, description="条款编号"),
+            FieldSchema(name="section_number", dtype=DataType.VARCHAR, max_length=50, description="章节编号"),
+            FieldSchema(name="document_id", dtype=DataType.INT64, description="文档ID"),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.embedding_dim, description="向量嵌入"),
+        ]
+        schema = CollectionSchema(fields=fields, description="金融知识库向量集合")
+        self.collection = Collection(name=self.collection_name, schema=schema)
+        logger.info(f"Collection 架构已创建, 向量维度: {self.embedding_dim}")
+        
+        index_params = {
+            "metric_type": "L2",
+            "index_type": "IVF_FLAT",
+            "params": {"nlist": 128}
+        }
+        self.collection.create_index(field_name="embedding", index_params=index_params)
+        logger.info("索引已创建，等待构建...")
+        self.collection.load()
+        logger.info(f"已创建并加载新 Collection: {self.collection_name}")
+    
+    def _get_db_connection(self):
+        """获取数据库连接"""
+        import mysql.connector
+        return mysql.connector.connect(
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+            user=self.db_user,
+            password=self.db_password,
+            charset='utf8mb4',
+            collation='utf8mb4_unicode_ci'
+        )
     
     def add_document(self, name: str, source: str = None, file_type: str = None) -> int:
         """添加文档记录"""
         conn = None
         try:
-            conn = self._get_connection()
+            conn = self._get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO document (name, source, file_type) VALUES (%s, %s, %s) RETURNING id", (name, source, file_type))
-            doc_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO document (name, source, file_type) VALUES (%s, %s, %s)",
+                (name, source, file_type)
+            )
+            doc_id = cursor.lastrowid
             conn.commit()
             logger.info(f"文档添加成功: {name} (id={doc_id})")
             return doc_id
@@ -200,193 +160,235 @@ class KnowledgeBaseService:
             raise
         finally:
             if conn:
-                self._return_connection(conn)
+                conn.close()
     
-    def add_knowledge_batch(self, document_id: int, knowledge_items: List[Dict], batch_size: int = 100) -> Tuple[int, int]:
+    def add_knowledge_batch(
+        self,
+        document_id: int,
+        knowledge_items: List[Dict],
+        batch_size: int = 100
+    ) -> Tuple[int, int]:
         """批量导入知识点"""
         start_time = time.time()
         success_count = 0
         fail_count = 0
         conn = None
-        
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            contents = [item['content'] for item in knowledge_items]
-            embeddings = self.embedding_model.encode(contents, batch_size=32, show_progress_bar=True, convert_to_numpy=True)
-            
-            embeddings_f32 = embeddings.astype(np.float32, copy=False)
-            if embeddings_f32.ndim != 2 or embeddings_f32.shape[1] != self.embedding_dim:
-                raise ValueError(
-                    f"嵌入向量维度不匹配: embeddings.shape={embeddings_f32.shape}, expected_dim={self.embedding_dim}"
-                )
 
-            if not self.faiss_index.is_trained:
-                n_train = int(embeddings_f32.shape[0])
-                nlist = int(getattr(self.faiss_index, "nlist", 0) or 0)
-                if nlist and n_train < nlist:
-                    logger.warning(
-                        f"训练样本数({n_train})小于nlist({nlist})，已自动降级为 IndexFlatL2 以保证可用性"
-                    )
-                    if int(getattr(self.faiss_index, "ntotal", 0) or 0) != 0:
-                        raise RuntimeError("FAISS索引已包含向量，无法在非空索引上自动降级类型")
-                    self.faiss_index = faiss.IndexFlatL2(self.embedding_dim)
-                else:
-                    logger.info("训练FAISS索引")
-                    self.faiss_index.train(embeddings_f32)
+        try:
+            logger.info(f"开始批量导入 {len(knowledge_items)} 条知识点...")
             
-            for i in range(0, len(knowledge_items), batch_size):
-                batch_items = knowledge_items[i:i+batch_size]
-                batch_embeddings = embeddings_f32[i:i+batch_size]
-                
-                for item, embedding in zip(batch_items, batch_embeddings):
-                    try:
-                        cursor.execute("SAVEPOINT kb_item")
-                        cursor.execute("""
-                            INSERT INTO knowledge (document_id, content, category, region, regulation_type, article_number, section_number)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
-                        """, (
-                            document_id,
-                            item['content'],
-                            item.get('category'),
-                            item.get('region'),
-                            item.get('regulation_type'),
-                            item.get('article_number'),
-                            item.get('section_number')
-                        ))
-                        
-                        knowledge_id = cursor.fetchone()[0]
-                        faiss_id = int(self.faiss_index.ntotal)
-                        self.faiss_index.add(np.asarray([embedding], dtype=np.float32))
-                        self.knowledge_id_map[str(knowledge_id)] = faiss_id
-                        
-                        cursor.execute("UPDATE knowledge SET embedding_id = %s WHERE id = %s", (faiss_id, knowledge_id))
-                        success_count += 1
-                        cursor.execute("RELEASE SAVEPOINT kb_item")
-                    except Exception as e:
-                        logger.warning(f"插入知识点失败: {e}")
-                        try:
-                            cursor.execute("ROLLBACK TO SAVEPOINT kb_item")
-                            cursor.execute("RELEASE SAVEPOINT kb_item")
-                        except Exception:
-                            pass
-                        fail_count += 1
-                
-                conn.commit()
-            
-            self._save_faiss_index()
+            # 1. 先批量插入 MySQL，获取所有 knowledge_id
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            # 构建批量插入的 SQL
+            insert_sql = """
+                INSERT INTO knowledge
+                (document_id, content, category, region, regulation_type, article_number, section_number)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+
+            # 批量插入 MySQL
+            values_list = [
+                (
+                    document_id,
+                    item['content'],
+                    item.get('category'),
+                    item.get('region'),
+                    item.get('regulation_type'),
+                    item.get('article_number'),
+                    item.get('section_number')
+                )
+                for item in knowledge_items
+            ]
+
+            cursor.executemany(insert_sql, values_list)
+            conn.commit()
+
+            # 获取插入的所有 ID
+            cursor.execute("SELECT LAST_INSERT_ID()")
+            first_id = cursor.fetchone()[0]
+            knowledge_ids = list(range(first_id, first_id + len(knowledge_items)))
+            logger.info(f"MySQL 插入完成, knowledge_ids: {first_id} ~ {first_id + len(knowledge_items) - 1}")
+
+            # 2. 生成向量嵌入
+            logger.info("开始生成向量嵌入...")
+            contents = [item['content'] for item in knowledge_items]
+            embeddings = self.embedding_model.encode(
+                contents,
+                batch_size=32,
+                show_progress_bar=True,
+                convert_to_numpy=True
+            )
+            embeddings_list = embeddings.tolist()
+            logger.info(f"向量生成完成, 维度: {len(embeddings_list[0]) if embeddings_list else 0}")
+
+            # 3. 批量插入 Milvus
+            logger.info("开始批量插入 Milvus...")
+            for batch_start in range(0, len(knowledge_items), batch_size):
+                batch_end = min(batch_start + batch_size, len(knowledge_items))
+                batch_items = knowledge_items[batch_start:batch_end]
+                batch_ids = knowledge_ids[batch_start:batch_end]
+                batch_embeddings = embeddings_list[batch_start:batch_end]
+
+                # Milvus v2 需要按列组织数据
+                entities = [
+                    batch_ids,  # knowledge_id
+                    [item['content'] or "" for item in batch_items],  # content
+                    [item.get('category') or "" for item in batch_items],  # category
+                    [item.get('region') or "" for item in batch_items],  # region
+                    [item.get('regulation_type') or "" for item in batch_items],  # regulation_type
+                    [item.get('article_number') or "" for item in batch_items],  # article_number
+                    [item.get('section_number') or "" for item in batch_items],  # section_number
+                    [document_id] * len(batch_items),  # document_id
+                    batch_embeddings  # embedding
+                ]
+
+                logger.debug(f"entities 长度: {len(entities)}, 每个字段值数量: {[len(e) for e in entities]}")
+
+                try:
+                    result = self.collection.insert(entities)
+                    milvus_ids = result.primary_keys
+
+                    # 更新 Milvus ID 到 MySQL
+                    for kid, mvid in zip(batch_ids, milvus_ids):
+                        cursor.execute(
+                            "UPDATE knowledge SET milvus_id = %s WHERE id = %s",
+                            (mvid, kid)
+                        )
+                    conn.commit()
+
+                    # 刷新 Milvus 使数据立即可查询
+                    self.collection.flush()
+                    
+                    success_count += len(batch_items)
+                    logger.info(f"批次 {batch_start}-{batch_end} 插入成功, {len(batch_items)} 条")
+
+                except Exception as e:
+                    logger.error(f"批次 {batch_start}-{batch_end} Milvus 插入失败: {e}")
+                    logger.error(f"  entities 长度: {len(entities)}, 每列数据量: {[len(e) for e in entities]}")
+                    fail_count += len(batch_items)
+
             duration = time.time() - start_time
             logger.info(f"批量导入完成: 成功{success_count}个, 失败{fail_count}个, 耗时{duration:.2f}秒")
             return success_count, fail_count
+
         except Exception as e:
+            logger.error(f"批量导入失败: {e}")
             if conn:
                 conn.rollback()
-            logger.error(f"批量导入失败: {e}")
             raise
         finally:
             if conn:
-                self._return_connection(conn)
+                conn.close()
     
-    def search(self, query: str, top_k: int = 5, threshold: float = 0.7, region: Optional[str] = None) -> List[Dict]:
+    def search(
+        self, 
+        query: str, 
+        top_k: int = 5, 
+        threshold: float = 0.7,
+        region: Optional[str] = None
+    ) -> List[Dict]:
         """检索知识点"""
         start_time = time.time()
         try:
-            query_embedding = self.embedding_model.encode([query], convert_to_numpy=True)[0]
-            distances, indices = self.faiss_index.search(np.array([query_embedding], dtype=np.float32), top_k)
+            query_embedding = self.embedding_model.encode([query], convert_to_numpy=True)[0].tolist()
             
-            results = []
+            search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
+            
+            if region:
+                filter_expr = f'region == "{region}"'
+            else:
+                filter_expr = None
+            
+            results = self.collection.search(
+                data=[query_embedding],
+                anns_field="embedding",
+                param=search_params,
+                limit=top_k * 2,
+                output_fields=["knowledge_id", "content", "category", "region", 
+                             "regulation_type", "article_number", "section_number", "document_id"],
+                expr=filter_expr
+            )
+            
+            search_results = []
             conn = None
             try:
-                conn = self._get_connection()
+                conn = self._get_db_connection()
                 cursor = conn.cursor()
                 
-                for idx, distance in zip(indices[0], distances[0]):
-                    if idx == -1:
-                        continue
-                    
-                    knowledge_id = None
-                    for kid, fid in self.knowledge_id_map.items():
-                        if fid == idx:
-                            knowledge_id = int(kid)
-                            break
-                    
-                    if knowledge_id is None:
-                        continue
-                    
-                    if region:
-                        cursor.execute("""
-                            SELECT k.id, k.content, k.category, k.region, k.regulation_type, k.article_number, k.section_number, d.name
-                            FROM knowledge k
-                            JOIN document d ON k.document_id = d.id
-                            WHERE k.id = %s AND k.region = %s
-                        """, (knowledge_id, region))
-                    else:
-                        cursor.execute("""
-                            SELECT k.id, k.content, k.category, k.region, k.regulation_type, k.article_number, k.section_number, d.name
-                            FROM knowledge k JOIN document d ON k.document_id = d.id WHERE k.id = %s
-                        """, (knowledge_id,))
-                    
-                    row = cursor.fetchone()
-                    if row:
+                for hits in results:
+                    for hit in hits:
+                        distance = hit.distance
                         similarity = 1.0 / (1.0 + distance)
+                        
                         if similarity >= threshold:
-                            results.append({
-                                'knowledge_id': row[0], 'content': row[1], 'category': row[2],
-                                'region': row[3], 'regulation_type': row[4], 'article_number': row[5], 'section_number': row[6],
-                                'document_name': row[7], 'similarity': float(similarity), 'distance': float(distance)
+                            knowledge_id = hit.entity.get("knowledge_id")
+                            
+                            cursor.execute("""
+                                SELECT d.name FROM knowledge k
+                                JOIN document d ON k.document_id = d.id
+                                WHERE k.id = %s
+                            """, (knowledge_id,))
+                            doc_row = cursor.fetchone()
+                            doc_name = doc_row[0] if doc_row else ""
+                            
+                            search_results.append({
+                                'knowledge_id': knowledge_id,
+                                'content': hit.entity.get("content"),
+                                'category': hit.entity.get("category"),
+                                'region': hit.entity.get("region"),
+                                'regulation_type': hit.entity.get("regulation_type"),
+                                'article_number': hit.entity.get("article_number"),
+                                'section_number': hit.entity.get("section_number"),
+                                'document_name': doc_name,
+                                'similarity': float(similarity),
+                                'distance': float(distance)
                             })
                 
                 duration = time.time() - start_time
-                self._log_operation('search', 'success', f"查询: {query}, 结果数: {len(results)}", duration * 1000)
-                logger.info(f"检索完成: {len(results)}个结果, 耗时{duration:.3f}秒")
+                self._log_operation('search', 'success', f"查询: {query}, 结果数: {len(search_results)}", duration * 1000)
+                logger.info(f"检索完成: {len(search_results)}个结果, 耗时{duration:.3f}秒")
                 if duration > 2.0:
                     logger.warning(f"检索响应时间超过2秒: {duration:.3f}秒")
-                return results
+                return search_results[:top_k]
             finally:
                 if conn:
-                    self._return_connection(conn)
+                    conn.close()
         except Exception as e:
             logger.error(f"检索失败: {e}")
             raise
     
-    def _save_faiss_index(self):
-        """保存FAISS索引到磁盘"""
-        try:
-            index_file = os.path.join(self.faiss_index_path, "financial_kb.index")
-            id_map_file = os.path.join(self.faiss_index_path, "id_map.json")
-            faiss.write_index(self.faiss_index, index_file)
-            with open(id_map_file, 'w') as f:
-                json.dump(self.knowledge_id_map, f)
-            logger.info(f"FAISS索引已保存到 {index_file}")
-        except Exception as e:
-            logger.error(f"保存FAISS索引失败: {e}")
-            raise
-    
-    def _log_operation(self, operation: str, status: str = None, message: str = None, duration_ms: float = None, knowledge_id: int = None):
+    def _log_operation(self, operation: str, status: str = None, message: str = None, 
+                      duration_ms: float = None, knowledge_id: int = None):
         """记录操作日志"""
         conn = None
         try:
-            conn = self._get_connection()
+            conn = self._get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO log (operation, knowledge_id, status, message, duration_ms) VALUES (%s, %s, %s, %s, %s)", (operation, knowledge_id, status, message, duration_ms))
+            cursor.execute(
+                "INSERT INTO log (operation, knowledge_id, status, message, duration_ms) VALUES (%s, %s, %s, %s, %s)",
+                (operation, knowledge_id, status, message, duration_ms)
+            )
             conn.commit()
         except Exception as e:
             logger.warning(f"记录日志失败: {e}")
         finally:
             if conn:
-                self._return_connection(conn)
+                conn.close()
     
     def get_statistics(self) -> Dict:
         """获取知识库统计信息"""
         conn = None
         try:
-            conn = self._get_connection()
+            conn = self._get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM document")
             doc_count = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM knowledge")
             knowledge_count = cursor.fetchone()[0]
+            
+            milvus_count = self.collection.num_entities
 
             cursor.execute("""
                 SELECT category, COUNT(*) as count
@@ -415,7 +417,7 @@ class KnowledgeBaseService:
             return {
                 'document_count': doc_count,
                 'knowledge_count': knowledge_count,
-                'faiss_index_size': len(self.knowledge_id_map),
+                'milvus_vector_count': milvus_count,
                 'category_distribution': category_stats,
                 'regulation_distribution': regulation_stats,
                 'region_distribution': region_stats
@@ -425,10 +427,36 @@ class KnowledgeBaseService:
             raise
         finally:
             if conn:
-                self._return_connection(conn)
+                conn.close()
     
     def close(self):
-        """关闭连接池"""
-        if self.connection_pool:
-            self.connection_pool.closeall()
-            logger.info("连接池已关闭")
+        """关闭连接"""
+        try:
+            connections.disconnect("default")
+            logger.info("Milvus 连接已关闭")
+        except Exception as e:
+            logger.warning(f"关闭 Milvus 连接时出错: {e}")
+
+
+_default_kb = None
+
+def get_default_kb() -> KnowledgeBaseService:
+    """获取默认知识库实例"""
+    global _default_kb
+    if _default_kb is None:
+        settings = get_settings()
+        _default_kb = KnowledgeBaseService(
+            milvus_host=settings.MILVUS_HOST,
+            milvus_port=settings.MILVUS_PORT,
+            milvus_user=settings.MILVUS_USER,
+            milvus_password=settings.MILVUS_PASSWORD,
+            collection_name=settings.MILVUS_COLLECTION,
+            embedding_model=settings.EMBEDDING_MODEL,
+            embedding_dim=settings.EMBEDDING_DIM,
+            db_host=settings.MYSQL_HOST,
+            db_port=settings.MYSQL_PORT,
+            db_name=settings.MYSQL_DATABASE,
+            db_user=settings.MYSQL_USER,
+            db_password=settings.MYSQL_PASSWORD,
+        )
+    return _default_kb

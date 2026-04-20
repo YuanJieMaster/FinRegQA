@@ -2,7 +2,7 @@
 金融知识库系统 - 使用示例
 Financial Knowledge Base System - Usage Example
 
-演示如何使用PostgreSQL+FAISS构建金融知识库
+演示如何使用MySQL+Milvus构建金融知识库
 """
 
 import os
@@ -25,7 +25,7 @@ def get_default_kb() -> FinancialKnowledgeBase:
 
     连接参数可通过环境变量覆盖：
     - FINREGQA_DB_HOST / FINREGQA_DB_PORT / FINREGQA_DB_NAME / FINREGQA_DB_USER / FINREGQA_DB_PASSWORD
-    - FINREGQA_EMBEDDING_MODEL / FINREGQA_FAISS_INDEX_PATH / FINREGQA_MAX_CONNECTIONS / FINREGQA_EMBEDDING_DIM
+    - FINREGQA_EMBEDDING_MODEL / FINREGQA_MILVUS_HOST / FINREGQA_MILVUS_PORT / FINREGQA_EMBEDDING_DIM
     """
 
     global _DEFAULT_KB
@@ -34,13 +34,11 @@ def get_default_kb() -> FinancialKnowledgeBase:
 
     _DEFAULT_KB = FinancialKnowledgeBase(
         db_host=os.getenv("FINREGQA_DB_HOST", "localhost"),
-        db_port=int(os.getenv("FINREGQA_DB_PORT", "5432")),
-        db_name=os.getenv("FINREGQA_DB_NAME", "financial_kb"),
-        db_user=os.getenv("FINREGQA_DB_USER", "postgres"),
-        db_password=os.getenv("FINREGQA_DB_PASSWORD", "postgres"),
+        db_port=int(os.getenv("FINREGQA_DB_PORT", "3306")),
+        db_name=os.getenv("FINREGQA_DB_NAME", "finregqa"),
+        db_user=os.getenv("FINREGQA_DB_USER", "root"),
+        db_password=os.getenv("FINREGQA_DB_PASSWORD", "root_password"),
         embedding_model=os.getenv("FINREGQA_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
-        faiss_index_path=os.getenv("FINREGQA_FAISS_INDEX_PATH", "./faiss_index"),
-        max_connections=int(os.getenv("FINREGQA_MAX_CONNECTIONS", "10")),
         embedding_dim=int(os.getenv("FINREGQA_EMBEDDING_DIM", "768")),
     )
     return _DEFAULT_KB
@@ -360,13 +358,11 @@ def example_basic_usage():
     # 初始化知识库
     kb = FinancialKnowledgeBase(
         db_host="localhost",
-        db_port=5432,
-        db_name="financial_kb",
-        db_user="postgres",
-        db_password="postgres",
+        db_port=3306,
+        db_name="finregqa",
+        db_user="root",
+        db_password="root_password",
         embedding_model="BAAI/bge-small-zh-v1.5",
-        faiss_index_path="./faiss_index",
-        max_connections=10,
         embedding_dim=768
     )
     
@@ -441,7 +437,7 @@ def example_basic_usage():
     print(f"\n知识库统计:")
     print(f"  - 文档数: {stats['document_count']}")
     print(f"  - 知识点数: {stats['knowledge_count']}")
-    print(f"  - FAISS索引大小: {stats['faiss_index_size']}")
+    print(f"  - Milvus向量数: {stats.get('milvus_vector_count', 'N/A')}")
     print(f"  - 分类分布: {stats['category_distribution']}")
     
     kb.close()
@@ -455,12 +451,11 @@ def example_batch_import():
     
     kb = FinancialKnowledgeBase(
         db_host="localhost",
-        db_port=5432,
-        db_name="financial_kb",
-        db_user="postgres",
-        db_password="postgres",
-        embedding_model="BAAI/bge-small-zh-v1.5",
-        faiss_index_path="./faiss_index"
+        db_port=3306,
+        db_name="finregqa",
+        db_user="root",
+        db_password="root_password",
+        embedding_model="BAAI/bge-small-zh-v1.5"
     )
     
     # 添加文档
@@ -513,10 +508,10 @@ def example_error_handling():
     try:
         kb = FinancialKnowledgeBase(
             db_host="localhost",
-            db_port=5432,
-            db_name="financial_kb",
-            db_user="postgres",
-            db_password="postgres"
+            db_port=3306,
+            db_name="finregqa",
+            db_user="root",
+            db_password="root_password"
         )
         
         # 测试无效查询
@@ -544,12 +539,11 @@ def example_performance_test():
     
     kb = FinancialKnowledgeBase(
         db_host="localhost",
-        db_port=5432,
-        db_name="financial_kb",
-        db_user="postgres",
-        db_password="postgres",
-        embedding_model="BAAI/bge-small-zh-v1.5",
-        faiss_index_path="./faiss_index"
+        db_port=3306,
+        db_name="finregqa",
+        db_user="root",
+        db_password="root_password",
+        embedding_model="BAAI/bge-small-zh-v1.5"
     )
     
     # 添加文档
@@ -612,7 +606,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("金融知识库系统 - 使用示例")
     print("=" * 80)
-    print("\n注意: 请确保PostgreSQL已启动并配置正确的连接参数")
+    print("\n注意: 请确保MySQL已启动并配置正确的连接参数")
     print("=" * 80)
     
     try:
@@ -638,6 +632,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n✗ 执行出错: {e}")
         print("\n请检查:")
-        print("1. PostgreSQL服务是否正在运行")
+        print("1. MySQL服务是否正在运行")
         print("2. 数据库连接参数是否正确")
         print("3. 所有依赖包是否已安装 (pip install -r requirements.txt)")

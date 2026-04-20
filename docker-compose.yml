@@ -1,28 +1,112 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: financial_kb_postgres
+  # Milvus Standalone 向量数据库
+  milvus:
+    container_name: finregqa_milvus
+    image: milvusdb/milvus:v2.4.0
+    command: ["milvus", "run", "standalone"]
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: financial_kb
-    ports:
-      - "5432:5432"
+      ETCD_USE_EMBED: "true"
+      COMMON_STORAGETYPE: "local"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - milvus_data:/var/lib/milvus
+      - milvus_etcd:/var/lib/milvus/etcd
+    ports:
+      - "19530:19530"
+      - "9091:9091"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 60s
     networks:
-      - financial_kb_network
+      - finregqa_network
+
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: finregqa_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-finregqa}
+      MYSQL_USER: ${MYSQL_USER:-finregqa}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-finregqa_password}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD:-root_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - finregqa_network
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # FinRegQA 应用服务
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: finregqa_app
+  #   environment:
+  #     - DEBUG=${DEBUG:-False}
+  #     - APP_NAME=${APP_NAME:-FinRegQA}
+  #     - MYSQL_HOST=mysql
+  #     - MYSQL_PORT=3306
+  #     - MYSQL_DATABASE=${MYSQL_DATABASE:-finregqa}
+  #     - MYSQL_USER=${MYSQL_USER:-finregqa}
+  #     - MYSQL_PASSWORD=${MYSQL_PASSWORD:-finregqa_password}
+  #     - MILVUS_HOST=milvus
+  #     - MILVUS_PORT=19530
+  #     - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+  #     - ALGORITHM=${ALGORITHM:-HS256}
+  #     - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+  #     - SMTP_HOST=${SMTP_HOST:-smtp.qq.com}
+  #     - SMTP_PORT=${SMTP_PORT:-587}
+  #     - SMTP_USER=${SMTP_USER:-}
+  #     - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+  #     - SMTP_USE_TLS=${SMTP_USE_TLS:-True}
+  #     - PASSWORD_RESET_SECRET_KEY=${PASSWORD_RESET_SECRET_KEY:-change-me-in-production}
+  #     - MAX_SESSIONS_PER_USER=${MAX_SESSIONS_PER_USER:-3}
+  #     - FINREGQA_LLM_MODEL=${FINREGQA_LLM_MODEL:-gpt-4o-mini}
+  #     - FINREGQA_LLM_BASE_URL=${FINREGQA_LLM_BASE_URL:-https://api.openai.com/v1}
+  #     - FINREGQA_LLM_API_KEY=${FINREGQA_LLM_API_KEY:-}
+  #     - FINREGQA_LLM_TEMPERATURE=${FINREGQA_LLM_TEMPERATURE:-0.1}
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - app_data:/app/data
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+  #     milvus:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+  #   networks:
+  #     - finregqa_network
+  #   restart: unless-stopped
 
 volumes:
-  postgres_data:
+  milvus_data:
+    driver: local
+  milvus_etcd:
+    driver: local
+  mysql_data:
+    driver: local
+  app_data:
+    driver: local
 
 networks:
-  financial_kb_network:
+  finregqa_network:
     driver: bridge

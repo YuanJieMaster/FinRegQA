@@ -42,7 +42,7 @@ class StatsResponse(BaseModel):
     """统计信息响应"""
     document_count: int
     knowledge_count: int
-    faiss_index_size: int
+    milvus_vector_count: int
     category_distribution: dict
     regulation_distribution: dict
     region_distribution: dict

@@ -44,13 +44,11 @@ htmlcov/
 .tox/
 .hypothesis/
 
-# FAISS索引
-faiss_index/
-*.index
-id_map.json
+# Milvus 数据
+milvus_data/
 
-# PostgreSQL
-postgres_data/
+# MySQL
+mysql_data/
 
 # Logs
 *.log

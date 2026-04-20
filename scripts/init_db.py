@@ -33,10 +33,10 @@ def create_database():
 def init_tables():
     """初始化数据表"""
     from app.core.database import engine, Base
-    from app.models import User, PasswordResetToken, UserSession
+    from app.models import User, PasswordResetToken, UserSession, Document, Knowledge, Log
     
     Base.metadata.create_all(bind=engine)
-    print("✅ 数据表创建成功")
+    print("✅ 数据表创建成功 (users, password_reset_tokens, user_sessions, document, knowledge, log)")
 
 
 if __name__ == "__main__":

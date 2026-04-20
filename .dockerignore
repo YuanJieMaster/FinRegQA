@@ -1,0 +1,75 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+var
+sdist
+develop-eggs
+.installed.cfg
+lib
+lib64
+
+# Virtual environments
+venv
+env
+.env
+.env.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+
+# Documentation
+*.md
+docs/_build
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs
+
+# Temporary files
+*.tmp
+*.temp
+temp
+tmp
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Uploaded files (keep the directory but not contents)
+data/uploads/*
+!data/uploads/.gitkeep
+
+# Milvus data (mounted as volume)
+milvus_data/
+
+# Node (if any)
+node_modules
+package-lock.json
