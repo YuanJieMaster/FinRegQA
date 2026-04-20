@@ -7,11 +7,16 @@ Financial Knowledge Base System - Usage Example
 
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from app.services.knowledge_base import KnowledgeBaseService as FinancialKnowledgeBase
 from app.services.text_processor import (
     TextSplitterService as FinancialRegulationSplitter,
     load_financial_document,
+)
+from app.services.llm_chunking import (
+    LLMChunkingService,
+    chunk_text_with_llm,
+    ChunkingResult,
 )
 from dotenv import load_dotenv
 load_dotenv()
@@ -98,6 +103,8 @@ def ingest_regulation_file(
     keep_separator: bool = True,
     batch_size: int = 100,
     kb: Optional[FinancialKnowledgeBase] = None,
+    use_llm_chunking: bool = True,
+    llm_config: Optional[Any] = None,
 ) -> Dict:
     """
     金融分块器 → 知识库：一键导入单个监管文件（PDF/DOCX/TXT）。
@@ -127,11 +134,6 @@ def ingest_regulation_file(
     kb = kb or get_default_kb()
 
     doc = load_financial_document(file_path, clean_text=True)
-    splitter = FinancialRegulationSplitter(
-        min_chunk_size=min_chunk_size,
-        keep_separator=keep_separator,
-    )
-    chunks = splitter.split_text(doc.page_content)
 
     file_name = doc.metadata.get("file_name") or os.path.basename(file_path)
     file_type = (doc.metadata.get("file_type") or "").lstrip(".")
@@ -146,25 +148,51 @@ def ingest_regulation_file(
 
     knowledge_items: List[Dict] = []
 
-    for chunk in chunks:
-        # 仅存储“条”（第X条）。识别到“章”（第X章）则丢弃，不写入任何字段，也不跨 chunk 沿用。
-        _ignored_chapter, article_number, _ignored_section_number = _extract_regulation_structure(
-            chunk, None
-        )
+    # LLM 智能分块
+    if use_llm_chunking:
+        try:
+            chunking_result = chunk_text_with_llm(
+                doc.page_content,
+                document_name=file_name,
+                category=category,
+                region=region,
+                config=llm_config,
+            )
 
-        # 分类字段始终使用调用方传入的 category；
-        item_category = category
+            for chunk in chunking_result.chunks:
+                if len(chunk.content) < min_chunk_size:
+                    continue
 
-        knowledge_items.append(
-            {
-                "content": chunk.strip(),
-                "category": item_category,
-                "region": region,
-                "regulation_type": regulation_type,
-                "article_number": article_number,
-                "section_number": None,
-            }
+                knowledge_items.append(
+                    {
+                        "content": chunk.content.strip(),
+                        "category": category,
+                        "region": region,
+                        "regulation_type": regulation_type,
+                        "article_number": chunk.metadata.article_number,
+                        "section_number": chunk.metadata.section_number,
+                    }
+                )
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"LLM 分块失败，回退到规则分块: {e}")
+
+            chunks = _rule_based_split(
+                doc.page_content,
+                min_chunk_size=min_chunk_size,
+                keep_separator=keep_separator,
+            )
+            knowledge_items.extend(_build_knowledge_items(chunks, category, region, regulation_type))
+    else:
+        # 规则分块
+        splitter = FinancialRegulationSplitter(
+            min_chunk_size=min_chunk_size,
+            keep_separator=keep_separator,
         )
+        chunks = splitter.split_text(doc.page_content)
+        knowledge_items.extend(_build_knowledge_items(chunks, category, region, regulation_type))
 
     success, failed = kb.add_knowledge_batch(
         document_id=document_id,
@@ -176,10 +204,46 @@ def ingest_regulation_file(
         "document_id": document_id,
         "file_name": file_name,
         "file_type": file_type,
-        "chunk_count": len(chunks),
+        "chunk_count": len(knowledge_items),
         "success": success,
         "failed": failed,
+        "use_llm_chunking": use_llm_chunking,
     }
+
+
+def _rule_based_split(text: str, min_chunk_size: int, keep_separator: bool) -> List[str]:
+    """规则分块（提取原有逻辑）"""
+    splitter = FinancialRegulationSplitter(
+        min_chunk_size=min_chunk_size,
+        keep_separator=keep_separator,
+    )
+    return splitter.split_text(text)
+
+
+def _build_knowledge_items(
+    chunks: List[str],
+    category: str,
+    region: Optional[str],
+    regulation_type: str,
+) -> List[Dict]:
+    """从分块构建知识条目"""
+    knowledge_items = []
+    for chunk in chunks:
+        _ignored_chapter, article_number, _ignored_section_number = _extract_regulation_structure(
+            chunk, None
+        )
+
+        knowledge_items.append(
+            {
+                "content": chunk.strip(),
+                "category": category,
+                "region": region,
+                "regulation_type": regulation_type,
+                "article_number": article_number,
+                "section_number": None,
+            }
+        )
+    return knowledge_items
 
 
 def answer_question(question: str, region: Optional[str] = None) -> dict:
@@ -200,15 +264,12 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
 
     kb = get_default_kb()
 
-    # 检索参数：优先从环境变量读，便于调参；不给则使用合理默认值
     top_k = int(os.getenv("FINREGQA_TOP_K", "8"))
     threshold = float(os.getenv("FINREGQA_THRESHOLD", "0.05"))
 
     normalized_region = (region or "").strip() or None
 
-    # 可选地区过滤：先按地区检索，结果不足时回退到全局检索补足
     raw_results = kb.search(query=q, top_k=top_k, threshold=threshold, region=normalized_region)
-    # if normalized_region and len(raw_results) < max(2, min(top_k, 5)):
     if normalized_region == "全国":
         fallback_results = kb.search(query=q, top_k=top_k, threshold=threshold)
         existing_ids = {r.get("knowledge_id") for r in raw_results}
@@ -239,13 +300,12 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
         return {
             "answer": (
                 "未检索到足够相关的法规依据，无法可靠回答。"
-                "你可以尝试更具体的关键词（如“核心一级资本充足率”“流动性覆盖率”）或降低检索阈值（FINREGQA_THRESHOLD）。"
+                "你可以尝试更具体的关键词或降低检索阈值。"
             ),
             "references": [],
             "raw_results": raw_results,
         }
 
-    # 优先尝试大模型 RAG 生成（LangChain）；失败时回退到下方抽取式回答
     top_refs = references[: min(5, len(references))]
     llm_model = os.getenv("FINREGQA_LLM_MODEL", "gpt-4o-mini")
     llm_temperature = float(os.getenv("FINREGQA_LLM_TEMPERATURE", "0.1"))
@@ -266,7 +326,7 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
             sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
             content = (ref.get("content") or "").strip()
             if len(content) > 500:
-                content = content[:500] + "…"
+                content = content[:500] + "..."
             context_lines.append(
                 f"【依据{i}】文档：{doc}｜条款：{art} {sec}｜相似度：{sim_text}\n{content}"
             )
@@ -274,14 +334,12 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
         context_text = "\n\n".join(context_lines)
 
         prompt = ChatPromptTemplate.from_template(
-            """
-你是一名严谨的金融监管问答助手。请严格基于“法规依据”回答，不得编造。
+            """你是一名严谨的金融监管问答助手。请严格基于"法规依据"回答，不得编造。
 
 回答规则：
 1. 只允许使用提供的法规依据。
-
-3. 先给出结论，再给出依据说明。
-4. 涉及比例、数值、期限时，必须在依据中指出来源条款。
+2. 先给出结论，再给出依据说明。
+3. 涉及比例、数值、期限时，必须在依据中指出来源条款。
 
 用户问题：
 {question}
@@ -290,13 +348,13 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
 {context}
 
 请按以下格式输出：
-【结论】
+|【结论】
 ...
 
-【依据说明】
+|【依据说明】
 ...
 
-【适用边界/风险提示】
+|【适用边界/风险提示】
 ...
 """.strip()
         )
@@ -320,11 +378,9 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
             "raw_results": raw_results,
         }
     except Exception:
-        # 打印错误
         import sys
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error: {sys.exc_info()[1]}", file=sys.stderr)
 
-    # 生成一个“可控”的答案：把最相关的 1-3 条依据拼接，并明确来源
     top_refs = references[: min(3, len(references))]
     lines = []
     lines.append(f"问题：{q}")
@@ -337,7 +393,7 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
         sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
         snippet = (ref.get("content") or "").strip()
         if len(snippet) > 240:
-            snippet = snippet[:240] + "…"
+            snippet = snippet[:240] + "..."
         lines.append(f"{i}) [{doc}] {art} {sec}（相似度 {sim_text}）：{snippet}")
 
     lines.append("结论：以上为检索到的条款依据摘要；如需严格合规结论，请以原文条款为准并补充更具体问题。")
