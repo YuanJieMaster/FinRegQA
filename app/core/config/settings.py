@@ -4,6 +4,7 @@ Application Settings
 """
 import os
 from typing import Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
@@ -21,6 +22,20 @@ class Settings(BaseSettings):
     APP_NAME: str = "FinRegQA - 金融制度知识问答系统"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, value):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return True
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on", "debug", "dev"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
+            return False
+        return value
     
     # API前缀
     API_V1_PREFIX: str = "/api/v1"
@@ -34,6 +49,12 @@ class Settings(BaseSettings):
     MYSQL_USER: str = os.getenv("MYSQL_USER", "root")
     MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD", "root_password")
     MYSQL_DATABASE: str = os.getenv("MYSQL_DATABASE", "finregqa")
+    MYSQL_POOL_NAME: str = os.getenv("MYSQL_POOL_NAME", "finregqa_pool")
+    MYSQL_POOL_SIZE: int = int(os.getenv("MYSQL_POOL_SIZE", "10"))
+    MYSQL_POOL_RESET_SESSION: bool = os.getenv("MYSQL_POOL_RESET_SESSION", "true").lower() in ("1", "true", "yes", "on")
+    MYSQL_CONNECT_TIMEOUT: int = int(os.getenv("MYSQL_CONNECT_TIMEOUT", "10"))
+    MYSQL_READ_TIMEOUT: int = int(os.getenv("MYSQL_READ_TIMEOUT", "30"))
+    MYSQL_WRITE_TIMEOUT: int = int(os.getenv("MYSQL_WRITE_TIMEOUT", "30"))
     
     @property
     def DATABASE_URL(self) -> str:

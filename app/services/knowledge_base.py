@@ -9,6 +9,8 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
+from sqlalchemy.pool import QueuePool
+import pymysql
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
@@ -34,6 +36,12 @@ class KnowledgeBaseService:
         db_name: str = "finregqa",
         db_user: str = "root",
         db_password: str = "root_password",
+        db_pool_name: str = "finregqa_pool",
+        db_pool_size: int = 10,
+        db_pool_reset_session: bool = True,
+        db_connect_timeout: int = 10,
+        db_read_timeout: int = 30,
+        db_write_timeout: int = 30,
     ):
         self.milvus_host = milvus_host
         self.milvus_port = milvus_port
@@ -47,6 +55,13 @@ class KnowledgeBaseService:
         self.db_name = db_name
         self.db_user = db_user
         self.db_password = db_password
+        self.db_pool_name = db_pool_name
+        self.db_pool_size = db_pool_size
+        self.db_pool_reset_session = db_pool_reset_session
+        self.db_connect_timeout = db_connect_timeout
+        self.db_read_timeout = db_read_timeout
+        self.db_write_timeout = db_write_timeout
+        self._db_pool = self._create_db_pool()
         
         self._connect_milvus()
         
@@ -126,18 +141,40 @@ class KnowledgeBaseService:
         self.collection.load()
         logger.info(f"已创建并加载新 Collection: {self.collection_name}")
     
+    def _create_db_pool(self):
+        """Create a reusable MySQL connection pool for knowledge operations."""
+        pool = QueuePool(
+            creator=lambda: pymysql.connect(
+                host=self.db_host,
+                port=self.db_port,
+                user=self.db_user,
+                password=self.db_password,
+                database=self.db_name,
+                charset="utf8mb4",
+                autocommit=False,
+                connect_timeout=self.db_connect_timeout,
+                read_timeout=self.db_read_timeout,
+                write_timeout=self.db_write_timeout,
+            ),
+            pool_size=self.db_pool_size,
+            max_overflow=self.db_pool_size,
+            recycle=3600,
+            pre_ping=False,
+            reset_on_return="rollback" if self.db_pool_reset_session else None,
+        )
+        logger.info(
+            "MySQL connection pool initialized: %s@%s:%s/%s size=%s",
+            self.db_user,
+            self.db_host,
+            self.db_port,
+            self.db_name,
+            self.db_pool_size,
+        )
+        return pool
+
     def _get_db_connection(self):
         """获取数据库连接"""
-        import mysql.connector
-        return mysql.connector.connect(
-            host=self.db_host,
-            port=self.db_port,
-            database=self.db_name,
-            user=self.db_user,
-            password=self.db_password,
-            charset='utf8mb4',
-            collation='utf8mb4_unicode_ci'
-        )
+        return self._db_pool.connect()
     
     def add_document(self, name: str, source: str = None, file_type: str = None) -> int:
         """添加文档记录"""
@@ -324,15 +361,7 @@ class KnowledgeBaseService:
                         
                         if similarity >= threshold:
                             knowledge_id = hit.entity.get("knowledge_id")
-                            
-                            cursor.execute("""
-                                SELECT d.name FROM knowledge k
-                                JOIN document d ON k.document_id = d.id
-                                WHERE k.id = %s
-                            """, (knowledge_id,))
-                            doc_row = cursor.fetchone()
-                            doc_name = doc_row[0] if doc_row else ""
-                            
+
                             search_results.append({
                                 'knowledge_id': knowledge_id,
                                 'content': hit.entity.get("content"),
@@ -341,17 +370,41 @@ class KnowledgeBaseService:
                                 'regulation_type': hit.entity.get("regulation_type"),
                                 'article_number': hit.entity.get("article_number"),
                                 'section_number': hit.entity.get("section_number"),
-                                'document_name': doc_name,
+                                'document_name': "",
                                 'similarity': float(similarity),
                                 'distance': float(distance)
                             })
+
+                search_results = search_results[:top_k]
+                knowledge_ids = [
+                    item["knowledge_id"]
+                    for item in search_results
+                    if item.get("knowledge_id") is not None
+                ]
+
+                if knowledge_ids:
+                    placeholders = ", ".join(["%s"] * len(knowledge_ids))
+                    cursor.execute(
+                        f"""
+                            SELECT k.id, d.name
+                            FROM knowledge k
+                            JOIN document d ON k.document_id = d.id
+                            WHERE k.id IN ({placeholders})
+                        """,
+                        tuple(knowledge_ids),
+                    )
+                    document_name_map = {row[0]: row[1] for row in cursor.fetchall()}
+                    for item in search_results:
+                        item["document_name"] = document_name_map.get(
+                            item["knowledge_id"], ""
+                        )
                 
                 duration = time.time() - start_time
                 self._log_operation('search', 'success', f"查询: {query}, 结果数: {len(search_results)}", duration * 1000)
                 logger.info(f"检索完成: {len(search_results)}个结果, 耗时{duration:.3f}秒")
                 if duration > 2.0:
                     logger.warning(f"检索响应时间超过2秒: {duration:.3f}秒")
-                return search_results[:top_k]
+                return search_results
             finally:
                 if conn:
                     conn.close()
@@ -458,5 +511,11 @@ def get_default_kb() -> KnowledgeBaseService:
             db_name=settings.MYSQL_DATABASE,
             db_user=settings.MYSQL_USER,
             db_password=settings.MYSQL_PASSWORD,
+            db_pool_name=settings.MYSQL_POOL_NAME,
+            db_pool_size=settings.MYSQL_POOL_SIZE,
+            db_pool_reset_session=settings.MYSQL_POOL_RESET_SESSION,
+            db_connect_timeout=settings.MYSQL_CONNECT_TIMEOUT,
+            db_read_timeout=settings.MYSQL_READ_TIMEOUT,
+            db_write_timeout=settings.MYSQL_WRITE_TIMEOUT,
         )
     return _default_kb
