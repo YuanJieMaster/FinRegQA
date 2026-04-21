@@ -38,11 +38,22 @@ def get_default_kb() -> FinancialKnowledgeBase:
         return _DEFAULT_KB
 
     _DEFAULT_KB = FinancialKnowledgeBase(
+        milvus_host=os.getenv("FINREGQA_MILVUS_HOST", os.getenv("MILVUS_HOST", "localhost")),
+        milvus_port=int(os.getenv("FINREGQA_MILVUS_PORT", os.getenv("MILVUS_PORT", "19530"))),
+        milvus_user=os.getenv("FINREGQA_MILVUS_USER", os.getenv("MILVUS_USER", "")),
+        milvus_password=os.getenv("FINREGQA_MILVUS_PASSWORD", os.getenv("MILVUS_PASSWORD", "")),
+        collection_name=os.getenv("FINREGQA_MILVUS_COLLECTION", os.getenv("MILVUS_COLLECTION", "financial_knowledge")),
         db_host=os.getenv("FINREGQA_DB_HOST", "localhost"),
         db_port=int(os.getenv("FINREGQA_DB_PORT", "3306")),
         db_name=os.getenv("FINREGQA_DB_NAME", "finregqa"),
         db_user=os.getenv("FINREGQA_DB_USER", "root"),
         db_password=os.getenv("FINREGQA_DB_PASSWORD", "root_password"),
+        db_pool_name=os.getenv("FINREGQA_DB_POOL_NAME", "finregqa_pool"),
+        db_pool_size=int(os.getenv("FINREGQA_DB_POOL_SIZE", "10")),
+        db_pool_reset_session=os.getenv("FINREGQA_DB_POOL_RESET_SESSION", "true").lower() in ("1", "true", "yes", "on"),
+        db_connect_timeout=int(os.getenv("FINREGQA_DB_CONNECT_TIMEOUT", "10")),
+        db_read_timeout=int(os.getenv("FINREGQA_DB_READ_TIMEOUT", "30")),
+        db_write_timeout=int(os.getenv("FINREGQA_DB_WRITE_TIMEOUT", "30")),
         embedding_model=os.getenv("FINREGQA_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"),
         embedding_dim=int(os.getenv("FINREGQA_EMBEDDING_DIM", "768")),
     )
