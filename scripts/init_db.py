@@ -1,46 +1,50 @@
 """
-数据库初始化脚本
-Database initialization script
+Database initialization script.
 """
+
 import sys
 from pathlib import Path
 
-# 将项目根目录添加到 Python 路径
+import pymysql
+
+# Add the project root to the Python path.
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-import pymysql
 from app.core.config import settings
 
 
-def create_database():
-    """创建数据库"""
+def create_database() -> None:
+    """Create the configured MySQL database if it does not exist."""
     connection = pymysql.connect(
         host=settings.MYSQL_HOST,
         port=settings.MYSQL_PORT,
         user=settings.MYSQL_USER,
-        password=settings.MYSQL_PASSWORD
+        password=settings.MYSQL_PASSWORD,
     )
-    
+
     try:
         with connection.cursor() as cursor:
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{settings.MYSQL_DATABASE}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-            print(f"✅ 数据库 '{settings.MYSQL_DATABASE}' 创建成功")
+            cursor.execute(
+                f"CREATE DATABASE IF NOT EXISTS `{settings.MYSQL_DATABASE}` "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+            print(f"Database '{settings.MYSQL_DATABASE}' created successfully")
     finally:
         connection.close()
 
 
-def init_tables():
-    """初始化数据表"""
-    from app.core.database import engine, Base
-    from app.models import User, PasswordResetToken, UserSession
-    
+def init_tables() -> None:
+    """Initialize SQLAlchemy-managed tables."""
+    from app.core.database import Base, engine
+    from app.models import PasswordResetToken, User, UserSession  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
-    print("✅ 数据表创建成功")
+    print("Database tables created successfully")
 
 
 if __name__ == "__main__":
-    print("开始初始化数据库...")
+    print("Initializing database...")
     create_database()
     init_tables()
-    print("✅ 数据库初始化完成")
+    print("Database initialization completed")

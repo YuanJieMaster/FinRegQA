@@ -45,12 +45,14 @@ htmlcov/
 .hypothesis/
 
 # FAISS索引
-faiss_index/
-*.index
-id_map.json
+milvus.db
+*.db
+data/milvus/
+.tmp_milvus_test/
+.tmp_mysql/
 
-# PostgreSQL
-postgres_data/
+# Database data
+mysql_data/
 
 # Logs
 *.log

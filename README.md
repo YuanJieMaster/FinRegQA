@@ -39,7 +39,7 @@ FinRegQA/
 ├── scripts/                    # 脚本目录
 │   └── init_db.py            # 数据库初始化
 ├── data/                      # 数据目录
-│   └── faiss_index/          # FAISS索引
+│   └── data/milvus.db        # Milvus Lite 本地数据库
 └── docs/                      # 文档目录
 ```
 
@@ -116,8 +116,8 @@ python main.py
 ## 技术栈
 
 - **Web框架**: FastAPI
-- **数据库**: MySQL (用户数据), PostgreSQL (知识库)
-- **向量检索**: FAISS
+- **数据库**: MySQL
+- **向量检索**: Milvus
 - **文本嵌入**: sentence-transformers
 - **认证**: JWT (python-jose)
 - **密码加密**: bcrypt (passlib)
