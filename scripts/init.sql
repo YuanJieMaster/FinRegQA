@@ -84,7 +84,14 @@ CREATE TABLE IF NOT EXISTS `knowledge` (
     INDEX `idx_knowledge_category` (`category`),
     INDEX `idx_knowledge_region` (`region`),
     INDEX `idx_knowledge_article` (`article_number`),
-    INDEX `idx_knowledge_milvus_id` (`milvus_id`)
+    INDEX `idx_knowledge_milvus_id` (`milvus_id`),
+    FULLTEXT INDEX `idx_knowledge_fulltext` (
+        `content`,
+        `category`,
+        `regulation_type`,
+        `article_number`,
+        `section_number`
+    ) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 操作日志表

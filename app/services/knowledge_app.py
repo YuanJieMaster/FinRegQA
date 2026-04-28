@@ -257,7 +257,7 @@ def _build_knowledge_items(
     return knowledge_items
 
 
-def answer_question(question: str, region: Optional[str] = None) -> dict:
+def answer_question(question: str, region: Optional[str] = None, mode: str = "hybrid") -> dict:
     """
     输入用户问题，返回：
     - answer: 生成的自然语言答案（优先走大模型RAG生成）
@@ -277,12 +277,26 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
 
     top_k = int(os.getenv("FINREGQA_TOP_K", "8"))
     threshold = float(os.getenv("FINREGQA_THRESHOLD", "0.05"))
+    search_mode = (mode or os.getenv("FINREGQA_SEARCH_MODE", "hybrid")).strip().lower()
+    if search_mode not in {"vector", "keyword", "hybrid"}:
+        raise ValueError("mode must be one of: vector, keyword, hybrid")
 
     normalized_region = (region or "").strip() or None
 
-    raw_results = kb.search(query=q, top_k=top_k, threshold=threshold, region=normalized_region)
+    raw_results = kb.search(
+        query=q,
+        top_k=top_k,
+        threshold=threshold,
+        region=normalized_region,
+        mode=search_mode,
+    )
     if normalized_region == "全国":
-        fallback_results = kb.search(query=q, top_k=top_k, threshold=threshold)
+        fallback_results = kb.search(
+            query=q,
+            top_k=top_k,
+            threshold=threshold,
+            mode=search_mode,
+        )
         existing_ids = {r.get("knowledge_id") for r in raw_results}
         for item in fallback_results:
             kid = item.get("knowledge_id")
@@ -302,6 +316,10 @@ def answer_question(question: str, region: Optional[str] = None) -> dict:
             "article_number": r.get("article_number"),
             "section_number": r.get("section_number"),
             "similarity": r.get("similarity"),
+            "vector_score": r.get("vector_score"),
+            "keyword_score": r.get("keyword_score"),
+            "hybrid_score": r.get("hybrid_score"),
+            "search_mode": r.get("search_mode", search_mode),
             "content": r.get("content"),
         }
         for r in raw_results

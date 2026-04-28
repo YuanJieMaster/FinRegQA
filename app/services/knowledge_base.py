@@ -5,6 +5,7 @@ Financial Knowledge Base Service - Using Milvus
 import os
 import time
 import logging
+import re
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 
@@ -324,9 +325,23 @@ class KnowledgeBaseService:
         query: str, 
         top_k: int = 5, 
         threshold: float = 0.7,
-        region: Optional[str] = None
+        region: Optional[str] = None,
+        mode: str = "vector",
     ) -> List[Dict]:
         """检索知识点"""
+        normalized_mode = (mode or "vector").strip().lower()
+        if normalized_mode == "keyword":
+            return self.keyword_search(query=query, top_k=top_k, region=region)
+        if normalized_mode == "hybrid":
+            return self.hybrid_search(
+                query=query,
+                top_k=top_k,
+                threshold=threshold,
+                region=region,
+            )
+        if normalized_mode != "vector":
+            raise ValueError("mode must be one of: vector, keyword, hybrid")
+
         start_time = time.time()
         try:
             query_embedding = self.embedding_model.encode([query], convert_to_numpy=True)[0].tolist()
@@ -372,7 +387,9 @@ class KnowledgeBaseService:
                                 'section_number': hit.entity.get("section_number"),
                                 'document_name': "",
                                 'similarity': float(similarity),
-                                'distance': float(distance)
+                                'distance': float(distance),
+                                'vector_score': float(similarity),
+                                'search_mode': 'vector',
                             })
 
                 search_results = search_results[:top_k]
@@ -411,6 +428,240 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.error(f"检索失败: {e}")
             raise
+
+    def keyword_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        region: Optional[str] = None,
+    ) -> List[Dict]:
+        """Search knowledge items by pure keyword matching."""
+        start_time = time.time()
+        q = (query or "").strip()
+        if not q:
+            return []
+
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+            try:
+                results = self._keyword_search_fulltext(cursor, q, top_k, region)
+            except Exception as e:
+                # Existing deployments may not have the FULLTEXT index yet.
+                logger.warning("FULLTEXT keyword search failed, fallback to LIKE: %s", e)
+                results = self._keyword_search_like(cursor, q, top_k, region)
+
+            duration = time.time() - start_time
+            self._log_operation(
+                'keyword_search',
+                'success',
+                f"query: {q}, results: {len(results)}",
+                duration * 1000,
+            )
+            logger.info("Keyword search finished: %s results, %.3fs", len(results), duration)
+            return results
+        except Exception as e:
+            logger.error("Keyword search failed: %s", e)
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def hybrid_search(
+        self,
+        query: str,
+        top_k: int = 5,
+        threshold: float = 0.7,
+        region: Optional[str] = None,
+        vector_weight: float = 0.6,
+        keyword_weight: float = 0.4,
+    ) -> List[Dict]:
+        """Fuse vector and keyword results with reciprocal-rank fusion."""
+        vector_results = self.search(
+            query=query,
+            top_k=max(top_k * 3, top_k),
+            threshold=threshold,
+            region=region,
+            mode="vector",
+        )
+        keyword_results = self.keyword_search(
+            query=query,
+            top_k=max(top_k * 3, top_k),
+            region=region,
+        )
+
+        fused: Dict[int, Dict] = {}
+        rrf_k = 60.0
+
+        def add_results(results: List[Dict], source: str, weight: float) -> None:
+            for rank, item in enumerate(results, 1):
+                knowledge_id = item.get("knowledge_id")
+                if knowledge_id is None:
+                    continue
+
+                score = weight / (rrf_k + rank)
+                if knowledge_id not in fused:
+                    merged = dict(item)
+                    merged["hybrid_score"] = 0.0
+                    merged["vector_score"] = 0.0
+                    merged["keyword_score"] = 0.0
+                    merged["search_mode"] = "hybrid"
+                    fused[knowledge_id] = merged
+
+                fused_item = fused[knowledge_id]
+                fused_item["hybrid_score"] += score
+                if source == "vector":
+                    fused_item["vector_score"] = max(
+                        float(fused_item.get("vector_score") or 0.0),
+                        float(item.get("vector_score") or item.get("similarity") or 0.0),
+                    )
+                else:
+                    fused_item["keyword_score"] = max(
+                        float(fused_item.get("keyword_score") or 0.0),
+                        float(item.get("keyword_score") or item.get("similarity") or 0.0),
+                    )
+
+        add_results(vector_results, "vector", vector_weight)
+        add_results(keyword_results, "keyword", keyword_weight)
+
+        results = sorted(
+            fused.values(),
+            key=lambda item: (
+                float(item.get("hybrid_score") or 0.0),
+                float(item.get("vector_score") or 0.0),
+                float(item.get("keyword_score") or 0.0),
+            ),
+            reverse=True,
+        )[:top_k]
+
+        max_score = max((float(item.get("hybrid_score") or 0.0) for item in results), default=0.0)
+        if max_score > 0:
+            for item in results:
+                item["similarity"] = float(item.get("hybrid_score") or 0.0) / max_score
+
+        return results
+
+    def _keyword_search_fulltext(
+        self,
+        cursor,
+        query: str,
+        top_k: int,
+        region: Optional[str],
+    ) -> List[Dict]:
+        score_expr = """
+            MATCH(k.content, k.category, k.regulation_type, k.article_number, k.section_number)
+            AGAINST (%s IN NATURAL LANGUAGE MODE)
+        """
+        where = [f"{score_expr} > 0"]
+        params = [query, query]
+        if region:
+            where.append("k.region = %s")
+            params.append(region)
+        params.append(top_k)
+
+        sql = f"""
+            SELECT
+                k.id,
+                k.content,
+                k.category,
+                k.region,
+                k.regulation_type,
+                k.article_number,
+                k.section_number,
+                d.name AS document_name,
+                {score_expr} AS keyword_score
+            FROM knowledge k
+            JOIN document d ON k.document_id = d.id
+            WHERE {' AND '.join(where)}
+            ORDER BY keyword_score DESC, k.id DESC
+            LIMIT %s
+        """
+        cursor.execute(sql, tuple(params))
+        return self._format_keyword_rows(cursor.fetchall())
+
+    def _keyword_search_like(
+        self,
+        cursor,
+        query: str,
+        top_k: int,
+        region: Optional[str],
+    ) -> List[Dict]:
+        terms = self._extract_keyword_terms(query)
+        searchable_columns = [
+            ("k.content", 3),
+            ("k.category", 2),
+            ("k.regulation_type", 2),
+            ("k.article_number", 1),
+            ("k.section_number", 1),
+        ]
+
+        score_parts = []
+        score_params = []
+        where_parts = []
+        where_params = []
+        for term in terms:
+            like = f"%{term}%"
+            term_matches = []
+            for column, weight in searchable_columns:
+                score_parts.append(f"CASE WHEN {column} LIKE %s THEN {weight} ELSE 0 END")
+                score_params.append(like)
+                term_matches.append(f"{column} LIKE %s")
+                where_params.append(like)
+            where_parts.append("(" + " OR ".join(term_matches) + ")")
+
+        where = where_parts or ["k.content LIKE %s"]
+        if not where_parts:
+            where_params.append(f"%{query}%")
+        if region:
+            where.append("k.region = %s")
+            where_params.append(region)
+
+        score_expr = " + ".join(score_parts) if score_parts else "1"
+        sql = f"""
+            SELECT
+                k.id,
+                k.content,
+                k.category,
+                k.region,
+                k.regulation_type,
+                k.article_number,
+                k.section_number,
+                d.name AS document_name,
+                ({score_expr}) AS keyword_score
+            FROM knowledge k
+            JOIN document d ON k.document_id = d.id
+            WHERE {' AND '.join(where)}
+            ORDER BY keyword_score DESC, k.id DESC
+            LIMIT %s
+        """
+        cursor.execute(sql, tuple(score_params + where_params + [top_k]))
+        return self._format_keyword_rows(cursor.fetchall())
+
+    def _extract_keyword_terms(self, query: str) -> List[str]:
+        terms = re.findall(r"[\w\u4e00-\u9fff]+", query or "", flags=re.UNICODE)
+        if not terms and query:
+            terms = [query]
+        return list(dict.fromkeys(term for term in terms if term.strip()))
+
+    def _format_keyword_rows(self, rows) -> List[Dict]:
+        results = []
+        for row in rows:
+            keyword_score = float(row[8] or 0.0)
+            results.append({
+                'knowledge_id': row[0],
+                'content': row[1],
+                'category': row[2],
+                'region': row[3],
+                'regulation_type': row[4],
+                'article_number': row[5],
+                'section_number': row[6],
+                'document_name': row[7] or "",
+                'similarity': keyword_score / (keyword_score + 1.0) if keyword_score > 0 else 0.0,
+                'keyword_score': keyword_score,
+                'search_mode': 'keyword',
+            })
+        return results
     
     def _log_operation(self, operation: str, status: str = None, message: str = None, 
                       duration_ms: float = None, knowledge_id: int = None):
