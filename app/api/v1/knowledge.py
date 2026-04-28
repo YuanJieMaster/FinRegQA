@@ -5,7 +5,7 @@ Knowledge base API endpoints
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ class QuestionRequest(BaseModel):
     """问答请求"""
     question: str
     region: Optional[str] = None
+    mode: Literal["vector", "keyword", "hybrid"] = "hybrid"
 
 
 class QuestionResponse(BaseModel):
@@ -55,7 +56,7 @@ async def api_answer(req: QuestionRequest):
         raise HTTPException(status_code=400, detail="问题不能为空")
 
     try:
-        return answer_question(req.question, region=req.region)
+        return answer_question(req.question, region=req.region, mode=req.mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"问答失败: {str(e)}")
 

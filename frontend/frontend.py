@@ -711,6 +711,18 @@ def show_main_page():
             question_region = question_region_custom.strip() if question_region_option == "其他（自定义）" else question_region_option
             if question_region == "全国":
                 question_region = None
+            search_mode = st.selectbox(
+                "Search mode",
+                options=["hybrid", "vector", "keyword"],
+                index=0,
+                format_func=lambda value: {
+                    "hybrid": "Hybrid",
+                    "vector": "Vector",
+                    "keyword": "Keyword",
+                }[value],
+                help="Hybrid combines vector semantic search and keyword search.",
+                key="question_search_mode_select",
+            )
         
         with col2:
             st.write("")
@@ -724,7 +736,11 @@ def show_main_page():
                 try:
                     response = requests.post(
                         f"{api_url_input}/api/knowledge/answer",
-                        json={"question": question, "region": question_region or None},
+                        json={
+                            "question": question,
+                            "region": question_region or None,
+                            "mode": search_mode,
+                        },
                         timeout=REQUEST_TIMEOUT_ANSWER,
                     )
                     
