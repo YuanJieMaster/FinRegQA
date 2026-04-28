@@ -5,12 +5,14 @@ Knowledge base API endpoints
 import os
 import tempfile
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel
+from pydantic import Field
 
-from app.services.knowledge_app import answer_question, ingest_regulation_file, get_default_kb
+from app.services.knowledge_base import get_default_kb
+from app.services.knowledge_app import ingest_regulation_file
 
 router = APIRouter(prefix="/knowledge", tags=["知识库"])
 
@@ -49,6 +51,186 @@ class StatsResponse(BaseModel):
     region_distribution: dict
 
 
+# =============================================================================
+# 知识库管理 API
+# =============================================================================
+
+class KnowledgeItem(BaseModel):
+    """知识点数据模型"""
+    id: int
+    document_id: int
+    content: str
+    category: Optional[str] = None
+    region: Optional[str] = None
+    regulation_type: Optional[str] = None
+    article_number: Optional[str] = None
+    section_number: Optional[str] = None
+    milvus_id: Optional[int] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    document_name: Optional[str] = None
+
+
+class KnowledgeListResponse(BaseModel):
+    """知识点列表响应"""
+    items: List[KnowledgeItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class DocumentItem(BaseModel):
+    """文档数据模型"""
+    id: int
+    name: str
+    source: Optional[str] = None
+    file_type: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    knowledge_count: int = 0
+
+
+class UpdateKnowledgeRequest(BaseModel):
+    """更新知识点请求"""
+    content: Optional[str] = None
+    category: Optional[str] = None
+    region: Optional[str] = None
+    regulation_type: Optional[str] = None
+    article_number: Optional[str] = None
+    section_number: Optional[str] = None
+
+
+class DistinctValuesResponse(BaseModel):
+    """不重复值响应"""
+    values: List[str]
+
+
+@router.get("/list", response_model=KnowledgeListResponse)
+async def api_list_knowledge(
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    category: Optional[str] = Query(None, description="分类筛选"),
+    region: Optional[str] = Query(None, description="地区筛选"),
+    regulation_type: Optional[str] = Query(None, description="监管类型筛选"),
+    search: Optional[str] = Query(None, description="关键词搜索"),
+):
+    """获取知识点列表（支持分页和筛选）"""
+    try:
+        kb = get_default_kb()
+        skip = (page - 1) * page_size
+        items, total = kb.get_all_knowledge(
+            skip=skip,
+            limit=page_size,
+            category=category,
+            region=region,
+            regulation_type=regulation_type,
+            search_keyword=search,
+        )
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        return KnowledgeListResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取知识点列表失败: {str(e)}")
+
+
+@router.get("/detail/{knowledge_id}", response_model=KnowledgeItem)
+async def api_get_knowledge(knowledge_id: int):
+    """获取单个知识点详情"""
+    try:
+        kb = get_default_kb()
+        item = kb.get_knowledge_by_id(knowledge_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="知识点不存在")
+        return item
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取知识点失败: {str(e)}")
+
+
+@router.put("/update/{knowledge_id}")
+async def api_update_knowledge(knowledge_id: int, req: UpdateKnowledgeRequest):
+    """更新知识点"""
+    try:
+        kb = get_default_kb()
+        success = kb.update_knowledge(
+            knowledge_id=knowledge_id,
+            content=req.content,
+            category=req.category,
+            region=req.region,
+            regulation_type=req.regulation_type,
+            article_number=req.article_number,
+            section_number=req.section_number,
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="知识点不存在或没有更新")
+        return {"message": "更新成功", "knowledge_id": knowledge_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新知识点失败: {str(e)}")
+
+
+@router.delete("/delete/{knowledge_id}")
+async def api_delete_knowledge(knowledge_id: int):
+    """删除知识点"""
+    try:
+        kb = get_default_kb()
+        success = kb.delete_knowledge(knowledge_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="知识点不存在")
+        return {"message": "删除成功", "knowledge_id": knowledge_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除知识点失败: {str(e)}")
+
+
+@router.get("/documents", response_model=List[DocumentItem])
+async def api_list_documents():
+    """获取文档列表"""
+    try:
+        kb = get_default_kb()
+        documents = kb.get_all_documents()
+        return documents
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取文档列表失败: {str(e)}")
+
+
+@router.delete("/documents/{document_id}")
+async def api_delete_document(document_id: int):
+    """删除文档及其所有知识点"""
+    try:
+        kb = get_default_kb()
+        success = kb.delete_document(document_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        return {"message": "删除成功", "document_id": document_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除文档失败: {str(e)}")
+
+
+@router.get("/filter-values", response_model=DistinctValuesResponse)
+async def api_get_filter_values(field: str = Query(..., description="字段名: category, region, regulation_type")):
+    """获取筛选字段的不重复值"""
+    try:
+        kb = get_default_kb()
+        values = kb.get_distinct_values(field)
+        return DistinctValuesResponse(values=values)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取筛选值失败: {str(e)}")
+
+
 @router.post("/answer", response_model=QuestionResponse)
 async def api_answer(req: QuestionRequest):
     """知识库问答接口"""
@@ -56,6 +238,7 @@ async def api_answer(req: QuestionRequest):
         raise HTTPException(status_code=400, detail="问题不能为空")
 
     try:
+        from app.services.knowledge_app import answer_question
         return answer_question(req.question, region=req.region, mode=req.mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"问答失败: {str(e)}")

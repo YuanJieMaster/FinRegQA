@@ -733,6 +733,388 @@ class KnowledgeBaseService:
             if conn:
                 conn.close()
     
+    def get_all_knowledge(
+        self,
+        skip: int = 0,
+        limit: int = 20,
+        category: Optional[str] = None,
+        region: Optional[str] = None,
+        regulation_type: Optional[str] = None,
+        search_keyword: Optional[str] = None,
+    ) -> Tuple[List[Dict], int]:
+        """获取所有知识点（支持分页和筛选）"""
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            where_clauses = []
+            params = []
+
+            if category:
+                where_clauses.append("k.category = %s")
+                params.append(category)
+            if region:
+                where_clauses.append("k.region = %s")
+                params.append(region)
+            if regulation_type:
+                where_clauses.append("k.regulation_type = %s")
+                params.append(regulation_type)
+            if search_keyword:
+                where_clauses.append("(k.content LIKE %s OR k.article_number LIKE %s)")
+                like_pattern = f"%{search_keyword}%"
+                params.extend([like_pattern, like_pattern])
+
+            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+            # 获取总数
+            count_sql = f"""
+                SELECT COUNT(*)
+                FROM knowledge k
+                WHERE {where_sql}
+            """
+            cursor.execute(count_sql, tuple(params))
+            total = cursor.fetchone()[0]
+
+            # 获取分页数据
+            query_sql = f"""
+                SELECT k.id, k.document_id, k.content, k.category, k.region,
+                       k.regulation_type, k.article_number, k.section_number,
+                       k.milvus_id, k.created_at, k.updated_at, d.name as document_name
+                FROM knowledge k
+                LEFT JOIN document d ON k.document_id = d.id
+                WHERE {where_sql}
+                ORDER BY k.updated_at DESC
+                LIMIT %s OFFSET %s
+            """
+            cursor.execute(query_sql, tuple(params + [limit, skip]))
+            rows = cursor.fetchall()
+
+            results = []
+            for row in rows:
+                results.append({
+                    'id': row[0],
+                    'document_id': row[1],
+                    'content': row[2],
+                    'category': row[3],
+                    'region': row[4],
+                    'regulation_type': row[5],
+                    'article_number': row[6],
+                    'section_number': row[7],
+                    'milvus_id': row[8],
+                    'created_at': str(row[9]) if row[9] else None,
+                    'updated_at': str(row[10]) if row[10] else None,
+                    'document_name': row[11],
+                })
+
+            return results, total
+
+        except Exception as e:
+            logger.error(f"获取知识点列表失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def get_knowledge_by_id(self, knowledge_id: int) -> Optional[Dict]:
+        """根据ID获取单个知识点"""
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            sql = """
+                SELECT k.id, k.document_id, k.content, k.category, k.region,
+                       k.regulation_type, k.article_number, k.section_number,
+                       k.milvus_id, k.created_at, k.updated_at, d.name as document_name
+                FROM knowledge k
+                LEFT JOIN document d ON k.document_id = d.id
+                WHERE k.id = %s
+            """
+            cursor.execute(sql, (knowledge_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                'id': row[0],
+                'document_id': row[1],
+                'content': row[2],
+                'category': row[3],
+                'region': row[4],
+                'regulation_type': row[5],
+                'article_number': row[6],
+                'section_number': row[7],
+                'milvus_id': row[8],
+                'created_at': str(row[9]) if row[9] else None,
+                'updated_at': str(row[10]) if row[10] else None,
+                'document_name': row[11],
+            }
+
+        except Exception as e:
+            logger.error(f"获取知识点失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def update_knowledge(
+        self,
+        knowledge_id: int,
+        content: Optional[str] = None,
+        category: Optional[str] = None,
+        region: Optional[str] = None,
+        regulation_type: Optional[str] = None,
+        article_number: Optional[str] = None,
+        section_number: Optional[str] = None,
+    ) -> bool:
+        """更新知识点"""
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            update_fields = []
+            params = []
+
+            if content is not None:
+                update_fields.append("content = %s")
+                params.append(content)
+            if category is not None:
+                update_fields.append("category = %s")
+                params.append(category)
+            if region is not None:
+                update_fields.append("region = %s")
+                params.append(region)
+            if regulation_type is not None:
+                update_fields.append("regulation_type = %s")
+                params.append(regulation_type)
+            if article_number is not None:
+                update_fields.append("article_number = %s")
+                params.append(article_number)
+            if section_number is not None:
+                update_fields.append("section_number = %s")
+                params.append(section_number)
+
+            if not update_fields:
+                return False
+
+            update_fields.append("updated_at = NOW()")
+            params.append(knowledge_id)
+
+            sql = f"""
+                UPDATE knowledge
+                SET {', '.join(update_fields)}
+                WHERE id = %s
+            """
+            cursor.execute(sql, tuple(params))
+            conn.commit()
+
+            # 如果内容更新了，也需要更新 Milvus 中的向量
+            if content is not None:
+                self._update_milvus_vector(knowledge_id, content)
+
+            logger.info(f"知识点更新成功: id={knowledge_id}")
+            return cursor.rowcount > 0
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"更新知识点失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def _update_milvus_vector(self, knowledge_id: int, new_content: str):
+        """更新 Milvus 中的向量"""
+        try:
+            # 获取旧的 Milvus ID
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT milvus_id, document_id FROM knowledge WHERE id = %s", (knowledge_id,))
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                conn.close()
+                return
+            milvus_id = row[0]
+            document_id = row[1]
+            conn.close()
+
+            # 生成新的向量
+            embedding = self.embedding_model.encode([new_content], convert_to_numpy=True)[0].tolist()
+
+            # 删除旧的向量
+            delete_expr = f"knowledge_id == {knowledge_id}"
+            self.collection.delete(delete_expr)
+
+            # 插入新的向量
+            cursor = conn.cursor() if conn else None
+            entities = [
+                [knowledge_id],
+                [new_content],
+                [""],  # category
+                [""],  # region
+                [""],  # regulation_type
+                [""],  # article_number
+                [""],  # section_number
+                [document_id],
+                [embedding],
+            ]
+            result = self.collection.insert(entities)
+            new_milvus_id = result.primary_keys[0]
+
+            # 更新 MySQL 中的 milvus_id
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE knowledge SET milvus_id = %s WHERE id = %s", (new_milvus_id, knowledge_id))
+            conn.commit()
+            conn.close()
+
+            self.collection.flush()
+            logger.info(f"Milvus 向量更新成功: knowledge_id={knowledge_id}")
+
+        except Exception as e:
+            logger.error(f"更新 Milvus 向量失败: {e}")
+
+    def delete_knowledge(self, knowledge_id: int) -> bool:
+        """删除知识点（同时删除 MySQL 和 Milvus 中的记录）"""
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            # 获取 Milvus ID
+            cursor.execute("SELECT milvus_id FROM knowledge WHERE id = %s", (knowledge_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                return False
+
+            milvus_id = row[0]
+
+            # 删除 MySQL 记录
+            cursor.execute("DELETE FROM knowledge WHERE id = %s", (knowledge_id,))
+            conn.commit()
+
+            # 删除 Milvus 向量
+            if milvus_id:
+                try:
+                    delete_expr = f"knowledge_id == {knowledge_id}"
+                    self.collection.delete(delete_expr)
+                    self.collection.flush()
+                except Exception as e:
+                    logger.warning(f"删除 Milvus 向量失败（已删除 MySQL 记录）: {e}")
+
+            logger.info(f"知识点删除成功: id={knowledge_id}")
+            return True
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"删除知识点失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def get_all_documents(self) -> List[Dict]:
+        """获取所有文档列表"""
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            sql = """
+                SELECT d.id, d.name, d.source, d.file_type, d.created_at, d.updated_at,
+                       COUNT(k.id) as knowledge_count
+                FROM document d
+                LEFT JOIN knowledge k ON d.id = k.document_id
+                GROUP BY d.id
+                ORDER BY d.updated_at DESC
+            """
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+            results = []
+            for row in rows:
+                results.append({
+                    'id': row[0],
+                    'name': row[1],
+                    'source': row[2],
+                    'file_type': row[3],
+                    'created_at': str(row[4]) if row[4] else None,
+                    'updated_at': str(row[5]) if row[5] else None,
+                    'knowledge_count': row[6],
+                })
+
+            return results
+
+        except Exception as e:
+            logger.error(f"获取文档列表失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def delete_document(self, document_id: int) -> bool:
+        """删除文档及其所有知识点"""
+        conn = None
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+
+            # 先获取所有相关的 milvus_id
+            cursor.execute("SELECT milvus_id FROM knowledge WHERE document_id = %s", (document_id,))
+            milvus_ids = [row[0] for row in cursor.fetchall() if row[0]]
+
+            # 删除 MySQL 中的知识点和文档
+            cursor.execute("DELETE FROM knowledge WHERE document_id = %s", (document_id,))
+            cursor.execute("DELETE FROM document WHERE id = %s", (document_id,))
+            conn.commit()
+
+            # 删除 Milvus 向量
+            if milvus_ids:
+                try:
+                    for mid in milvus_ids:
+                        delete_expr = f"knowledge_id in {[mid]}"
+                        self.collection.delete(delete_expr)
+                    self.collection.flush()
+                except Exception as e:
+                    logger.warning(f"删除 Milvus 向量失败: {e}")
+
+            logger.info(f"文档删除成功: id={document_id}")
+            return True
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"删除文档失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def get_distinct_values(self, field: str) -> List[str]:
+        """获取某字段的所有不重复值"""
+        conn = None
+        allowed_fields = ['category', 'region', 'regulation_type']
+        if field not in allowed_fields:
+            raise ValueError(f"field must be one of: {allowed_fields}")
+
+        try:
+            conn = self._get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT DISTINCT {field} FROM knowledge WHERE {field} IS NOT NULL AND {field} != '' ORDER BY {field}")
+            return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"获取字段值失败: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
     def close(self):
         """关闭连接"""
         try:
