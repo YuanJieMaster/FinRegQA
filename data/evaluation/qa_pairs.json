@@ -1,0 +1,114 @@
+[
+  {
+    "question": "商业银行的风险管理要求是什么？",
+    "ground_truth_answer": "商业银行应当建立完善的风险管理框架，包括风险识别、风险计量、风险监测和风险控制等环节。",
+    "ground_truth_context": [],
+    "keywords": [
+      "风险管理",
+      "风险识别",
+      "风险控制",
+      "内部控制"
+    ],
+    "difficulty": "easy",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "商业银行资本充足率不得低于多少？",
+    "ground_truth_answer": "商业银行资本充足率不得低于8%，核心资本充足率不得低于4%。",
+    "ground_truth_context": [],
+    "keywords": [
+      "资本充足率",
+      "8%",
+      "核心资本",
+      "4%"
+    ],
+    "difficulty": "easy",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "保险公司偿付能力充足率要求是多少？",
+    "ground_truth_answer": "保险公司偿付能力充足率不得低于100%，核心偿付能力充足率不低于50%。",
+    "ground_truth_context": [],
+    "keywords": [
+      "偿付能力",
+      "100%",
+      "核心偿付能力",
+      "50%"
+    ],
+    "difficulty": "easy",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "证券公司客户资产保护的措施有哪些？",
+    "ground_truth_answer": "证券公司应当将客户资金与自有资产分别管理、分别记账、分别托管。",
+    "ground_truth_context": [],
+    "keywords": [
+      "客户资产",
+      "分别管理",
+      "资金专用账户",
+      "挪用"
+    ],
+    "difficulty": "medium",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "金融机构信息披露的主要内容包括哪些？",
+    "ground_truth_answer": "金融机构应当披露财务状况、公司治理、风险管理、关联交易等信息。",
+    "ground_truth_context": [],
+    "keywords": [
+      "信息披露",
+      "财务状况",
+      "风险管理",
+      "关联交易"
+    ],
+    "difficulty": "medium",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "客户身份识别的基本要求是什么？",
+    "ground_truth_answer": "金融机构应当核对客户身份，了解客户背景，识别受益所有人。",
+    "ground_truth_context": [],
+    "keywords": [
+      "身份识别",
+      "受益所有人",
+      "尽职调查",
+      "客户背景"
+    ],
+    "difficulty": "medium",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "关联交易管理的基本原则是什么？",
+    "ground_truth_answer": "关联交易应当遵循公平、公正、公开的原则，价格应当公允。",
+    "ground_truth_context": [],
+    "keywords": [
+      "关联交易",
+      "公平",
+      "公正",
+      "公允"
+    ],
+    "difficulty": "medium",
+    "source_regulation": "",
+    "notes": ""
+  },
+  {
+    "question": "保险资金运用的范围是什么？",
+    "ground_truth_answer": "保险资金可投资于银行存款、债券、股票、证券投资基金等标准化资产。",
+    "ground_truth_context": [],
+    "keywords": [
+      "保险资金",
+      "银行存款",
+      "债券",
+      "股票"
+    ],
+    "difficulty": "hard",
+    "source_regulation": "",
+    "notes": ""
+  }
+]
