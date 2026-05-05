@@ -133,3 +133,17 @@ python main.py
 **Linux：**
 ```bash
 sudo apt install tesseract-ocr tesseract-ocr-chi-sim
+
+### DOC 文档格式支持（可选）
+系统支持导入 `.doc` 格式的旧版 Word 文档（通过 `textract` 库实现格式转换）。
+**Windows：**
+```powershell
+pip install textract pywin32
+```
+自动调用本机 Microsoft Word 进行转换，无需额外安装软件。
+**Linux / Docker：**
+# Ubuntu/Debian
+sudo apt install libreoffice
+# Alpine (Docker)
+apk add libreoffice
+使用 LibreOffice 进行格式转换。

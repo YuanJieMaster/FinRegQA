@@ -89,12 +89,12 @@ def clean_financial_text(text: str) -> str:
 
 
 def load_financial_document(file_path: str, clean_text: bool = True) -> Document:
-    """加载金融文档（支持DOCX/PDF/TXT/图片OCR格式）"""
+    """加载金融文档（支持DOC/DOCX/PDF/TXT/图片OCR格式）"""
     import os
     from pathlib import Path
-    
+
     file_ext = Path(file_path).suffix.lower()
-    
+
     try:
         if file_ext == ".pdf":
             import fitz
@@ -102,11 +102,23 @@ def load_financial_document(file_path: str, clean_text: bool = True) -> Document
             text_parts = [doc[page_num].get_text("text") for page_num in range(len(doc))]
             doc.close()
             full_text = "\n".join(text_parts)
-        elif file_ext == ".docx":
-            from docx import Document as DocxDocument
-            doc = DocxDocument(file_path)
-            text_parts = [para.text for para in doc.paragraphs if para.text.strip()]
-            full_text = "\n".join(text_parts)
+        elif file_ext in {".doc", ".docx"}:
+            import platform
+            if platform.system() == "Windows":
+                import win32com.client
+                abs_path = os.path.abspath(file_path)
+                word = win32com.client.Dispatch("Word.Application")
+                word.Visible = False
+                word.DisplayAlerts = False
+                try:
+                    doc = word.Documents.Open(abs_path)
+                    full_text = doc.Content.Text
+                finally:
+                    doc.Close(False)
+                    word.Quit()
+            else:
+                import textract
+                full_text = textract.process(file_path, encoding="utf-8", method="soffice").decode("utf-8")
         elif file_ext == ".txt":
             with open(file_path, "r", encoding="utf-8") as f:
                 full_text = f.read()
@@ -118,7 +130,10 @@ def load_financial_document(file_path: str, clean_text: bool = True) -> Document
             full_text = pytesseract.image_to_string(image, lang="chi_sim")
             full_text = full_text.strip()
         else:
-            raise ValueError(f"不支持的文件格式: {file_ext}，仅支持 .pdf, .docx, .txt, .png, .jpg, .jpeg, .bmp, .tiff, .gif, .webp")
+            raise ValueError(
+                f"不支持的文件格式: {file_ext}，"
+                "仅支持 .pdf, .docx, .doc, .txt, .png, .jpg, .jpeg, .bmp, .tiff, .gif, .webp"
+            )
         
         if clean_text:
             full_text = clean_financial_text(full_text)

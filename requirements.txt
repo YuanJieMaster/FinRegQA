@@ -44,8 +44,14 @@ langchain-openai>=0.1.0
 # ============================================================================
 PyMuPDF>=1.23.0
 
-# DOCX处理
+# DOCX处理（textract 底层依赖）
 python-docx>=1.1.0
+
+# DOCX/DOC 文本提取（支持 .doc 旧格式转换）
+textract>=1.0.0
+
+# Windows Word COM 接口（textract win32com 后端依赖）
+pywin32>=306
 
 # OCR图像识别
 pytesseract>=0.3.10

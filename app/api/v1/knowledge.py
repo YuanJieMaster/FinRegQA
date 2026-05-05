@@ -259,7 +259,7 @@ async def api_ingest(
     if not file.filename:
         raise HTTPException(status_code=400, detail="文件不能为空")
 
-    allowed_extensions = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif", ".webp"}
+    allowed_extensions = {".pdf", ".doc", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif", ".webp"}
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in allowed_extensions:
         raise HTTPException(
