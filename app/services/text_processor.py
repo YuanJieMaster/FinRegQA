@@ -89,7 +89,7 @@ def clean_financial_text(text: str) -> str:
 
 
 def load_financial_document(file_path: str, clean_text: bool = True) -> Document:
-    """加载金融文档（支持DOCX/PDF/TXT格式）"""
+    """加载金融文档（支持DOCX/PDF/TXT/图片OCR格式）"""
     import os
     from pathlib import Path
     
@@ -110,8 +110,15 @@ def load_financial_document(file_path: str, clean_text: bool = True) -> Document
         elif file_ext == ".txt":
             with open(file_path, "r", encoding="utf-8") as f:
                 full_text = f.read()
+        elif file_ext in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif", ".webp"}:
+            from PIL import Image
+            import pytesseract
+            pytesseract.pytesseract.tesseract_cmd = r"D:\tesseract\tesseract.exe"
+            image = Image.open(file_path)
+            full_text = pytesseract.image_to_string(image, lang="chi_sim")
+            full_text = full_text.strip()
         else:
-            raise ValueError(f"不支持的文件格式: {file_ext}，仅支持 .pdf, .docx, .txt")
+            raise ValueError(f"不支持的文件格式: {file_ext}，仅支持 .pdf, .docx, .txt, .png, .jpg, .jpeg, .bmp, .tiff, .gif, .webp")
         
         if clean_text:
             full_text = clean_financial_text(full_text)

@@ -661,7 +661,7 @@ def show_main_page():
         st.markdown("### 📖 使用说明")
         st.markdown("""
         1. **问答**：输入金融监管相关问题，系统会检索法规并生成答案
-        2. **上传文档**：支持 PDF、DOCX、TXT 格式
+        2. **上传文档**：支持 PDF、DOCX、TXT、图片格式（图片使用 OCR 识别）
         3. **统计**：查看知识库中的文档和知识点数量
         """)
     
@@ -674,7 +674,7 @@ def show_main_page():
     """, unsafe_allow_html=True)
     
     # 创建标签页
-    tab1, tab2, tab3, tab4 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息", "📚 知识库管理"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息", "📚 知识库管理", "🔍 准确率测试"])
 
     # ============================================================================
     # 标签页 1：问答
@@ -792,8 +792,8 @@ def show_main_page():
         with col1:
             uploaded_file = st.file_uploader(
                 "选择文件",
-                type=["pdf", "docx", "doc", "txt"],
-                help="支持 PDF、Word、TXT 格式"
+                type=["pdf", "docx", "doc", "txt", "png", "jpg", "jpeg", "bmp", "tiff", "gif", "webp"],
+                help="支持 PDF、Word、TXT、图片格式（PNG/JPG/JPEG/BMP/TIFF/GIF/WEBP，图片将使用 OCR 识别）"
             )
             
             category = st.selectbox(
@@ -1313,7 +1313,7 @@ def show_main_page():
     # 标签页 4：准确率评估
     # ============================================================================
 
-    with tab4:
+    with tab5:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
         col_header1, col_header2 = st.columns([4, 1])
@@ -1362,6 +1362,7 @@ def show_main_page():
         # ================================================================
         # 问答准确率评估
         # ================================================================
+        view_reports_btn = False
         if eval_type == "💬 问答准确率评估":
             with col2:
                 use_default = st.checkbox("使用默认问答对", value=True, help="使用系统预置的测试问答对")
@@ -1751,7 +1752,7 @@ def show_main_page():
                 with col_f1:
                     custom_file = st.file_uploader(
                         "选择文件",
-                        type=["pdf", "docx", "doc", "txt"],
+                        type=["pdf", "docx", "doc", "txt", "png", "jpg", "jpeg", "bmp", "tiff", "gif", "webp"],
                         key="custom_eval_file"
                     )
                 with col_f2:

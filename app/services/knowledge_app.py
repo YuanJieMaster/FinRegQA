@@ -118,14 +118,14 @@ def ingest_regulation_file(
     llm_config: Optional[Any] = None,
 ) -> Dict:
     """
-    金融分块器 → 知识库：一键导入单个监管文件（PDF/DOCX/TXT）。
+    金融分块器 → 知识库：一键导入单个监管文件（PDF/DOCX/TXT/图片）。
 
     1. 使用 load_financial_document + FinancialRegulationSplitter 分块
     2. 为每个 chunk 生成 metadata（章节名、条款号、款号等）
     3. 调用 FinancialKnowledgeBase.add_document + add_knowledge_batch 写入
 
     Args:
-        file_path: 文件路径（.pdf/.docx/.txt）
+        file_path: 文件路径（.pdf/.docx/.txt/图片格式）
         category: 默认分类
         regulation_type: 监管类型（写入 knowledge.regulation_type）
         region: 地区（可选；当前用于文档来源信息补充）

@@ -122,3 +122,14 @@ python main.py
 - **认证**: JWT (python-jose)
 - **密码加密**: bcrypt (passlib)
 - **邮件发送**: QQ邮箱 SMTP
+
+### OCR 图像识别（可选）
+
+如需支持图片格式导入，需安装 Tesseract OCR：
+**Windows：**
+1. 下载：https://github.com/UB-Mannheim/tesseract/wiki
+2. 安装 **Chinese Simplified** 语言包
+3. 配置环境变量或在代码中指定路径
+**Linux：**
+```bash
+sudo apt install tesseract-ocr tesseract-ocr-chi-sim
