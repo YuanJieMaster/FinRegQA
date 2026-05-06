@@ -1,0 +1,7 @@
+# Streamlit 前端依赖
+streamlit>=1.28.0
+requests>=2.31.0
+
+# 可选：增强功能
+# pandas>=2.0.0  # 用于数据处理和展示
+# plotly>=5.18.0  # 用于交互式图表

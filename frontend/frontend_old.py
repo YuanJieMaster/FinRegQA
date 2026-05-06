@@ -674,7 +674,7 @@ def show_main_page():
     """, unsafe_allow_html=True)
     
     # 创建标签页
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息", "📚 知识库管理", "🔍 准确率测试"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 问答", "📤 上传文档", "📊 统计信息", "📚 知识库管理", "📈 准确率评估"])
 
     # ============================================================================
     # 标签页 1：问答
@@ -1310,7 +1310,7 @@ def show_main_page():
     
     
     # ============================================================================
-    # 标签页 4：准确率评估
+    # 标签页 5：准确率评估
     # ============================================================================
 
     with tab5:
@@ -1426,6 +1426,7 @@ def show_main_page():
 
                             eval_resp = requests.post(
                                 f"{eval_api_url}/api/evaluation/evaluate/custom/question",
+                                params={"api_url": eval_api_url},
                                 json=eval_payload,
                                 timeout=180
                             )
@@ -1521,6 +1522,7 @@ def show_main_page():
                             try:
                                 batch_resp = requests.post(
                                     f"{eval_api_url}/api/evaluation/evaluate/custom/question",
+                                    params={"api_url": eval_api_url},
                                     json={"question": q},
                                     timeout=180
                                 )

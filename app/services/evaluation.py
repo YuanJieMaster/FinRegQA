@@ -1055,6 +1055,21 @@ def analyze_document_for_testing(file_path: str) -> dict:
         analyzer = DocumentStructureAnalyzer()
         structure = analyzer.analyze(content, os.path.basename(file_path))
 
+        # 构建与后端期望一致的 structure_summary
+        structure_summary = {
+            "document_type": structure.document_type.value,
+            "document_name": structure.document_name,
+            "raw_text_length": structure.raw_text_length,
+            "cleaned_text_length": structure.cleaned_text_length,
+            "total_articles": structure.total_articles,
+            "total_chapters": structure.total_chapters,
+            "complexity": structure.complexity.value,
+            "avg_article_length": structure.avg_article_length,
+            "predicted_chunk_count_range": f"{structure.predicted_chunk_count_min}-{structure.predicted_chunk_count_max}",
+            "predicted_chunk_count_expected": structure.predicted_chunk_count_expected,
+            "structure_features": structure.structure_features,
+        }
+
         return {
             "success": True,
             "document_name": structure.document_name,
@@ -1070,6 +1085,20 @@ def analyze_document_for_testing(file_path: str) -> dict:
             },
             "recommended_chunk_size": structure.recommended_chunk_size,
             "structure_features": structure.structure_features,
+            "document_analysis": {
+                "success": True,
+                "document_type": structure.document_type.value,
+                "complexity": structure.complexity.value,
+                "total_articles": structure.total_articles,
+                "total_chapters": structure.total_chapters,
+                "text_length": structure.cleaned_text_length,
+                "predicted_chunk_range": {
+                    "min": structure.predicted_chunk_count_min,
+                    "max": structure.predicted_chunk_count_max
+                },
+                "structure_summary": structure_summary
+            },
+            "structure_summary": structure_summary,
             "test_case": {
                 "file_name": os.path.basename(file_path),
                 "expected_categories": [],

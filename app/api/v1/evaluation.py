@@ -785,7 +785,7 @@ async def evaluate_custom_file(
 
 
 @router.post("/evaluate/custom/question", response_model=CustomQuestionEvalResponse)
-async def evaluate_custom_question(req: CustomQuestionEvalRequest):
+async def evaluate_custom_question(req: CustomQuestionEvalRequest, api_url: str = "http://localhost:8000"):
     """
     自定义问题检索准确率评估
 
@@ -802,8 +802,8 @@ async def evaluate_custom_question(req: CustomQuestionEvalRequest):
     start_time = time.time()
 
     try:
-        response = requests.post(
-            f"{get_api_url()}/api/knowledge/answer",
+        response = http_requests.post(
+            f"{api_url}/api/knowledge/answer",
             json={"question": req.question},
             timeout=180
         )
