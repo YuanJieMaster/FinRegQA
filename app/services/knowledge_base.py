@@ -6,6 +6,7 @@ import os
 import time
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 
@@ -359,16 +360,13 @@ class KnowledgeBaseService:
                 param=search_params,
                 limit=top_k * 2,
                 output_fields=["knowledge_id", "content", "category", "region", 
-                             "regulation_type", "article_number", "section_number", "document_id"],
+                             "regulation_type", "article_number", "section_number"],
                 expr=filter_expr
             )
             
             search_results = []
             conn = None
             try:
-                conn = self._get_db_connection()
-                cursor = conn.cursor()
-                
                 for hits in results:
                     for hit in hits:
                         distance = hit.distance
@@ -400,6 +398,8 @@ class KnowledgeBaseService:
                 ]
 
                 if knowledge_ids:
+                    conn = self._get_db_connection()
+                    cursor = conn.cursor()
                     placeholders = ", ".join(["%s"] * len(knowledge_ids))
                     cursor.execute(
                         f"""
@@ -478,18 +478,24 @@ class KnowledgeBaseService:
         keyword_weight: float = 0.4,
     ) -> List[Dict]:
         """Fuse vector and keyword results with reciprocal-rank fusion."""
-        vector_results = self.search(
-            query=query,
-            top_k=max(top_k * 3, top_k),
-            threshold=threshold,
-            region=region,
-            mode="vector",
-        )
-        keyword_results = self.keyword_search(
-            query=query,
-            top_k=max(top_k * 3, top_k),
-            region=region,
-        )
+        search_top_k = max(top_k * 3, top_k)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            vector_future = executor.submit(
+                self.search,
+                query=query,
+                top_k=search_top_k,
+                threshold=threshold,
+                region=region,
+                mode="vector",
+            )
+            keyword_future = executor.submit(
+                self.keyword_search,
+                query=query,
+                top_k=search_top_k,
+                region=region,
+            )
+            vector_results = vector_future.result()
+            keyword_results = keyword_future.result()
 
         fused: Dict[int, Dict] = {}
         rrf_k = 60.0
