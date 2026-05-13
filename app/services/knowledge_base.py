@@ -1,3 +1,5 @@
+# 加入耗时分析
+
 """
 FinRegQA 金融知识库服务
 Financial Knowledge Base Service - Using Milvus
@@ -6,7 +8,8 @@ import os
 import time
 import logging
 import re
-from typing import List, Dict, Tuple, Optional
+import json
+from typing import List, Dict, Tuple, Optional, Union
 from datetime import datetime
 
 from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
@@ -22,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class KnowledgeBaseService:
     """金融知识库服务 - 使用 Milvus 向量数据库"""
-    
+
     def __init__(
         self,
         milvus_host: str = "localhost",
@@ -50,7 +53,7 @@ class KnowledgeBaseService:
         self.milvus_password = milvus_password
         self.collection_name = collection_name
         self.embedding_dim = embedding_dim
-        
+
         self.db_host = db_host
         self.db_port = db_port
         self.db_name = db_name
@@ -63,12 +66,12 @@ class KnowledgeBaseService:
         self.db_read_timeout = db_read_timeout
         self.db_write_timeout = db_write_timeout
         self._db_pool = self._create_db_pool()
-        
+
         self._connect_milvus()
-        
+
         logger.info(f"加载嵌入模型: {embedding_model}")
         self.embedding_model = SentenceTransformer(embedding_model)
-        
+
         try:
             model_dim = int(self.embedding_model.get_sentence_embedding_dimension())
             if model_dim != self.embedding_dim:
@@ -76,9 +79,9 @@ class KnowledgeBaseService:
                 self.embedding_dim = model_dim
         except Exception as e:
             logger.warning(f"无法读取模型向量维度: {e}")
-        
+
         self._init_collection()
-    
+
     def _connect_milvus(self):
         """连接 Milvus 服务器"""
         alias = "default"
@@ -94,12 +97,12 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.error(f"Milvus 连接失败: {e}")
             raise
-    
+
     def _init_collection(self):
         """初始化 Milvus Collection"""
         if utility.has_collection(self.collection_name):
             self.collection = Collection(self.collection_name)
-            
+
             # 检查维度是否匹配
             schema = self.collection.schema
             embedding_field = next((f for f in schema.fields if f.name == "embedding"), None)
@@ -113,7 +116,7 @@ class KnowledgeBaseService:
                 logger.info(f"已加载现有 Collection: {self.collection_name}")
         else:
             self._create_collection()
-    
+
     def _create_collection(self):
         """创建新的 Milvus Collection"""
         fields = [
@@ -131,7 +134,7 @@ class KnowledgeBaseService:
         schema = CollectionSchema(fields=fields, description="金融知识库向量集合")
         self.collection = Collection(name=self.collection_name, schema=schema)
         logger.info(f"Collection 架构已创建, 向量维度: {self.embedding_dim}")
-        
+
         index_params = {
             "metric_type": "L2",
             "index_type": "IVF_FLAT",
@@ -141,7 +144,7 @@ class KnowledgeBaseService:
         logger.info("索引已创建，等待构建...")
         self.collection.load()
         logger.info(f"已创建并加载新 Collection: {self.collection_name}")
-    
+
     def _create_db_pool(self):
         """Create a reusable MySQL connection pool for knowledge operations."""
         pool = QueuePool(
@@ -176,7 +179,7 @@ class KnowledgeBaseService:
     def _get_db_connection(self):
         """获取数据库连接"""
         return self._db_pool.connect()
-    
+
     def add_document(self, name: str, source: str = None, file_type: str = None) -> int:
         """添加文档记录"""
         conn = None
@@ -199,7 +202,7 @@ class KnowledgeBaseService:
         finally:
             if conn:
                 conn.close()
-    
+
     def add_knowledge_batch(
         self,
         document_id: int,
@@ -214,7 +217,7 @@ class KnowledgeBaseService:
 
         try:
             logger.info(f"开始批量导入 {len(knowledge_items)} 条知识点...")
-            
+
             # 1. 先批量插入 MySQL，获取所有 knowledge_id
             conn = self._get_db_connection()
             cursor = conn.cursor()
@@ -282,8 +285,6 @@ class KnowledgeBaseService:
                     batch_embeddings  # embedding
                 ]
 
-                logger.debug(f"entities 长度: {len(entities)}, 每个字段值数量: {[len(e) for e in entities]}")
-
                 try:
                     result = self.collection.insert(entities)
                     milvus_ids = result.primary_keys
@@ -298,13 +299,12 @@ class KnowledgeBaseService:
 
                     # 刷新 Milvus 使数据立即可查询
                     self.collection.flush()
-                    
+
                     success_count += len(batch_items)
                     logger.info(f"批次 {batch_start}-{batch_end} 插入成功, {len(batch_items)} 条")
 
                 except Exception as e:
                     logger.error(f"批次 {batch_start}-{batch_end} Milvus 插入失败: {e}")
-                    logger.error(f"  entities 长度: {len(entities)}, 每列数据量: {[len(e) for e in entities]}")
                     fail_count += len(batch_items)
 
             duration = time.time() - start_time
@@ -319,64 +319,68 @@ class KnowledgeBaseService:
         finally:
             if conn:
                 conn.close()
-    
+
     def search(
-        self, 
-        query: str, 
-        top_k: int = 5, 
+        self,
+        query: str,
+        top_k: int = 5,
         threshold: float = 0.7,
         region: Optional[str] = None,
         mode: str = "vector",
-    ) -> List[Dict]:
-        """检索知识点"""
+        return_analysis: bool = False,
+    ) -> Union[List[Dict], Tuple[List[Dict], Dict]]:
+        """检索知识点，支持耗时分析返回"""
         normalized_mode = (mode or "vector").strip().lower()
         if normalized_mode == "keyword":
-            return self.keyword_search(query=query, top_k=top_k, region=region)
+            return self.keyword_search(query=query, top_k=top_k, region=region, return_analysis=return_analysis)
         if normalized_mode == "hybrid":
             return self.hybrid_search(
-                query=query,
-                top_k=top_k,
-                threshold=threshold,
-                region=region,
+                query=query, top_k=top_k, threshold=threshold, region=region, return_analysis=return_analysis
             )
         if normalized_mode != "vector":
             raise ValueError("mode must be one of: vector, keyword, hybrid")
 
         start_time = time.time()
+        analysis = {}
         try:
+            # 1. 记录生成向量耗时
+            t_emb_start = time.time()
             query_embedding = self.embedding_model.encode([query], convert_to_numpy=True)[0].tolist()
-            
+            t_emb_end = time.time()
+            analysis["embedding_time_ms"] = round((t_emb_end - t_emb_start) * 1000, 2)
+
             search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
-            
-            if region:
-                filter_expr = f'region == "{region}"'
-            else:
-                filter_expr = None
-            
+            filter_expr = f'region == "{region}"' if region else None
+
+            # 2. 记录 Milvus 检索耗时
+            t_milvus_start = time.time()
             results = self.collection.search(
                 data=[query_embedding],
                 anns_field="embedding",
                 param=search_params,
                 limit=top_k * 2,
-                output_fields=["knowledge_id", "content", "category", "region", 
+                output_fields=["knowledge_id", "content", "category", "region",
                              "regulation_type", "article_number", "section_number", "document_id"],
                 expr=filter_expr
             )
-            
+            t_milvus_end = time.time()
+            analysis["milvus_search_time_ms"] = round((t_milvus_end - t_milvus_start) * 1000, 2)
+
+            # 3. 记录 MySQL 查询耗时
+            t_mysql_start = time.time()
             search_results = []
             conn = None
             try:
                 conn = self._get_db_connection()
                 cursor = conn.cursor()
-                
+
                 for hits in results:
                     for hit in hits:
                         distance = hit.distance
                         similarity = 1.0 / (1.0 + distance)
-                        
+
                         if similarity >= threshold:
                             knowledge_id = hit.entity.get("knowledge_id")
-
                             search_results.append({
                                 'knowledge_id': knowledge_id,
                                 'content': hit.entity.get("content"),
@@ -393,11 +397,7 @@ class KnowledgeBaseService:
                             })
 
                 search_results = search_results[:top_k]
-                knowledge_ids = [
-                    item["knowledge_id"]
-                    for item in search_results
-                    if item.get("knowledge_id") is not None
-                ]
+                knowledge_ids = [item["knowledge_id"] for item in search_results if item.get("knowledge_id") is not None]
 
                 if knowledge_ids:
                     placeholders = ", ".join(["%s"] * len(knowledge_ids))
@@ -412,16 +412,35 @@ class KnowledgeBaseService:
                     )
                     document_name_map = {row[0]: row[1] for row in cursor.fetchall()}
                     for item in search_results:
-                        item["document_name"] = document_name_map.get(
-                            item["knowledge_id"], ""
-                        )
-                
-                duration = time.time() - start_time
-                self._log_operation('search', 'success', f"查询: {query}, 结果数: {len(search_results)}", duration * 1000)
-                logger.info(f"检索完成: {len(search_results)}个结果, 耗时{duration:.3f}秒")
-                if duration > 2.0:
-                    logger.warning(f"检索响应时间超过2秒: {duration:.3f}秒")
+                        item["document_name"] = document_name_map.get(item["knowledge_id"], "")
+
+                t_mysql_end = time.time()
+                analysis["mysql_lookup_time_ms"] = round((t_mysql_end - t_mysql_start) * 1000, 2)
+
+                # 计算总耗时
+                total_duration = time.time() - start_time
+                analysis["total_time_ms"] = round(total_duration * 1000, 2)
+
+                # 在 search 方法中添加
+                print(f"\n{'=' * 60}")
+                print(f"查询耗时分析:")
+                print(f"  向量生成: {analysis.get('embedding_time_ms', 0)}ms")
+                print(f"  Milvus检索: {analysis.get('milvus_search_time_ms', 0)}ms")
+                print(f"  MySQL查询: {analysis.get('mysql_lookup_time_ms', 0)}ms")
+                print(f"  总耗时: {analysis.get('total_time_ms', 0)}ms")
+                print(f"{'=' * 60}\n")
+
+                log_msg = f"查询: {query}, 结果数: {len(search_results)} | 耗时分析: {json.dumps(analysis, ensure_ascii=False)}"
+                self._log_operation('search', 'success', log_msg, total_duration * 1000)
+                logger.info(f"检索完成: {len(search_results)}个结果, 耗时{total_duration:.3f}秒. 详情: {analysis}")
+
+                if total_duration > 2.0:
+                    logger.warning(f"检索响应时间超过2秒: {total_duration:.3f}秒")
+
+                if return_analysis:
+                    return search_results, analysis
                 return search_results
+
             finally:
                 if conn:
                     conn.close()
@@ -434,32 +453,43 @@ class KnowledgeBaseService:
         query: str,
         top_k: int = 5,
         region: Optional[str] = None,
-    ) -> List[Dict]:
+        return_analysis: bool = False,
+    ) -> Union[List[Dict], Tuple[List[Dict], Dict]]:
         """Search knowledge items by pure keyword matching."""
         start_time = time.time()
+        analysis = {}
+
         q = (query or "").strip()
         if not q:
+            if return_analysis:
+                return [], {"total_time_ms": 0}
             return []
 
         conn = None
         try:
             conn = self._get_db_connection()
             cursor = conn.cursor()
+
+            t_mysql_start = time.time()
             try:
                 results = self._keyword_search_fulltext(cursor, q, top_k, region)
+                analysis["search_type"] = "fulltext"
             except Exception as e:
-                # Existing deployments may not have the FULLTEXT index yet.
                 logger.warning("FULLTEXT keyword search failed, fallback to LIKE: %s", e)
                 results = self._keyword_search_like(cursor, q, top_k, region)
+                analysis["search_type"] = "like_fallback"
+            t_mysql_end = time.time()
 
-            duration = time.time() - start_time
-            self._log_operation(
-                'keyword_search',
-                'success',
-                f"query: {q}, results: {len(results)}",
-                duration * 1000,
-            )
-            logger.info("Keyword search finished: %s results, %.3fs", len(results), duration)
+            analysis["mysql_search_time_ms"] = round((t_mysql_end - t_mysql_start) * 1000, 2)
+            total_duration = time.time() - start_time
+            analysis["total_time_ms"] = round(total_duration * 1000, 2)
+
+            log_msg = f"query: {q}, results: {len(results)} | 耗时分析: {json.dumps(analysis, ensure_ascii=False)}"
+            self._log_operation('keyword_search', 'success', log_msg, total_duration * 1000)
+            logger.info("Keyword search finished: %s results, %.3fs", len(results), total_duration)
+
+            if return_analysis:
+                return results, analysis
             return results
         except Exception as e:
             logger.error("Keyword search failed: %s", e)
@@ -476,21 +506,24 @@ class KnowledgeBaseService:
         region: Optional[str] = None,
         vector_weight: float = 0.6,
         keyword_weight: float = 0.4,
-    ) -> List[Dict]:
+        return_analysis: bool = False,
+    ) -> Union[List[Dict], Tuple[List[Dict], Dict]]:
         """Fuse vector and keyword results with reciprocal-rank fusion."""
-        vector_results = self.search(
-            query=query,
-            top_k=max(top_k * 3, top_k),
-            threshold=threshold,
-            region=region,
-            mode="vector",
-        )
-        keyword_results = self.keyword_search(
-            query=query,
-            top_k=max(top_k * 3, top_k),
-            region=region,
+        t_start = time.time()
+        analysis = {}
+
+        # 执行向量检索并获取耗时
+        vector_results, vector_analysis = self.search(
+            query=query, top_k=max(top_k * 3, top_k), threshold=threshold,
+            region=region, mode="vector", return_analysis=True
         )
 
+        # 执行关键词检索并获取耗时
+        keyword_results, keyword_analysis = self.keyword_search(
+            query=query, top_k=max(top_k * 3, top_k), region=region, return_analysis=True
+        )
+
+        t_fusion_start = time.time()
         fused: Dict[int, Dict] = {}
         rrf_k = 60.0
 
@@ -540,6 +573,20 @@ class KnowledgeBaseService:
             for item in results:
                 item["similarity"] = float(item.get("hybrid_score") or 0.0) / max_score
 
+        t_fusion_end = time.time()
+
+        # 组装完整的统计分析数据
+        analysis["vector_search_total_ms"] = vector_analysis.get("total_time_ms", 0)
+        analysis["keyword_search_total_ms"] = keyword_analysis.get("total_time_ms", 0)
+        analysis["fusion_time_ms"] = round((t_fusion_end - t_fusion_start) * 1000, 2)
+        analysis["total_time_ms"] = round((time.time() - t_start) * 1000, 2)
+        analysis["detailed_breakdown"] = {
+            "vector_details": vector_analysis,
+            "keyword_details": keyword_analysis
+        }
+
+        if return_analysis:
+            return results, analysis
         return results
 
     def _keyword_search_fulltext(
@@ -662,8 +709,8 @@ class KnowledgeBaseService:
                 'search_mode': 'keyword',
             })
         return results
-    
-    def _log_operation(self, operation: str, status: str = None, message: str = None, 
+
+    def _log_operation(self, operation: str, status: str = None, message: str = None,
                       duration_ms: float = None, knowledge_id: int = None):
         """记录操作日志"""
         conn = None
@@ -680,7 +727,7 @@ class KnowledgeBaseService:
         finally:
             if conn:
                 conn.close()
-    
+
     def get_statistics(self) -> Dict:
         """获取知识库统计信息"""
         conn = None
@@ -691,7 +738,7 @@ class KnowledgeBaseService:
             doc_count = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM knowledge")
             knowledge_count = cursor.fetchone()[0]
-            
+
             milvus_count = self.collection.num_entities
 
             cursor.execute("""
@@ -732,7 +779,7 @@ class KnowledgeBaseService:
         finally:
             if conn:
                 conn.close()
-    
+
     def get_all_knowledge(
         self,
         skip: int = 0,
@@ -1131,6 +1178,7 @@ def get_default_kb() -> KnowledgeBaseService:
     global _default_kb
     if _default_kb is None:
         settings = get_settings()
+        print(settings)
         _default_kb = KnowledgeBaseService(
             milvus_host=settings.MILVUS_HOST,
             milvus_port=settings.MILVUS_PORT,
