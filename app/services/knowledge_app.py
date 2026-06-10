@@ -5,6 +5,7 @@ Financial Knowledge Base System - Usage Example
 演示如何使用MySQL+Milvus构建金融知识库
 """
 
+import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -257,20 +258,116 @@ def _build_knowledge_items(
     return knowledge_items
 
 
-def answer_question(question: str, region: Optional[str] = None, mode: str = "hybrid") -> dict:
-    """
-    输入用户问题，返回：
-    - answer: 生成的自然语言答案（优先走大模型RAG生成）
-    - references: 用到的知识片段（content、article_number、document_name 等）
-    - raw_results: 原始检索结果
+
+# ---------------------------------------------------------------------------
+# Prompt 模板（供 answer_question 与流式接口共用）
+# ---------------------------------------------------------------------------
+_ANSWER_SYSTEM_PROMPT = """你是一名严谨的金融监管问答助手。请严格基于"法规依据"回答，不得编造。
+
+回答规则：
+1. 只允许使用提供的法规依据。
+2. 先给出结论，再给出依据说明。
+3. 涉及比例、数值、期限时，必须在依据中指出来源条款。
+
+请按以下格式输出：
+|【结论】
+...
+
+|【依据说明】
+...
+
+|【适用边界/风险提示】
+..."""
+
+
+def _build_context_text(references: list, max_content_chars: int = 500) -> str:
+    """将参考文献列表构建为 LLM 上下文文本块。"""
+    lines = []
+    for i, ref in enumerate(references, 1):
+        doc = ref.get("document_name") or "未知文档"
+        art = ref.get("article_number") or "未标明条款"
+        sec = ref.get("section_number") or ""
+        sim = ref.get("similarity")
+        sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
+        content = (ref.get("content") or "").strip()
+        if len(content) > max_content_chars:
+            content = content[:max_content_chars] + "..."
+        lines.append(
+            f"【依据{i}】文档：{doc}｜条款：{art} {sec}｜相似度：{sim_text}\n{content}"
+        )
+    return "\n\n".join(lines)
+
+
+def _build_answer_user_prompt(question: str, context_text: str) -> str:
+    """构建用户 prompt。"""
+    return f"用户问题：\n{question}\n\n法规依据：\n{context_text}"
+
+
+def _make_llm_kwargs():
+    """从环境变量构建 ChatOpenAI 通用 kwargs。"""
+    llm_model = os.getenv("FINREGQA_LLM_MODEL", "gpt-4o-mini")
+    llm_temperature = float(os.getenv("FINREGQA_LLM_TEMPERATURE", "0.1"))
+    llm_base_url = os.getenv("FINREGQA_LLM_BASE_URL")
+    llm_api_key = os.getenv("FINREGQA_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+    kwargs: dict = {
+        "model": llm_model,
+        "temperature": llm_temperature,
+    }
+    if llm_base_url:
+        kwargs["base_url"] = llm_base_url
+    if llm_api_key:
+        kwargs["api_key"] = llm_api_key
+    return kwargs
+
+
+def _build_fallback_answer(question: str, references: list) -> str:
+    """构建无 LLM 时的兜底文本答案。"""
+    top_refs = references[: min(3, len(references))]
+    lines = [f"问题：{question}", "基于已检索到的法规片段，相关依据如下："]
+    for i, ref in enumerate(top_refs, 1):
+        doc = ref.get("document_name") or "未知文档"
+        art = ref.get("article_number") or ""
+        sec = ref.get("section_number") or ""
+        sim = ref.get("similarity")
+        sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
+        snippet = (ref.get("content") or "").strip()
+        if len(snippet) > 240:
+            snippet = snippet[:240] + "..."
+        lines.append(f"{i}) [{doc}] {art} {sec}（相似度 {sim_text}）：{snippet}")
+    lines.append("结论：以上为检索到的条款依据摘要；如需严格合规结论，请以原文条款为准并补充更具体问题。")
+    return "\n".join(lines)
+
+
+def retrieve_references(
+    question: str,
+    region: Optional[str] = None,
+    mode: str = "hybrid",
+) -> dict:
+    """仅执行检索，返回 references / raw_results 及运行时参数。
+
+    返回 dict::
+        {
+            "ok": bool,
+            "question": str,
+            "references": list[dict],
+            "raw_results": list[dict],
+            "top_k": int,
+            "search_mode": str,
+            "llm_kwargs": dict,
+        }
     """
 
     q = (question or "").strip()
     if not q:
         return {
-            "answer": "问题为空：请提供一个具体的金融监管问题。",
+            "ok": False,
+            "question": "",
             "references": [],
             "raw_results": [],
+            "top_k": 0,
+            "search_mode": mode,
+            "llm_kwargs": {},
         }
 
     kb = get_default_kb()
@@ -325,6 +422,37 @@ def answer_question(question: str, region: Optional[str] = None, mode: str = "hy
         for r in raw_results
     ]
 
+    return {
+        "ok": True,
+        "question": q,
+        "references": references,
+        "raw_results": raw_results,
+        "top_k": top_k,
+        "search_mode": search_mode,
+        "llm_kwargs": _make_llm_kwargs(),
+    }
+
+
+def answer_question(question: str, region: Optional[str] = None, mode: str = "hybrid") -> dict:
+    """
+    输入用户问题，返回：
+    - answer: 生成的自然语言答案（优先走大模型RAG生成）
+    - references: 用到的知识片段（content、article_number、document_name 等）
+    - raw_results: 原始检索结果
+    """
+
+    retrieval = retrieve_references(question, region=region, mode=mode)
+    if not retrieval["ok"]:
+        return {
+            "answer": "问题为空：请提供一个具体的金融监管问题。",
+            "references": [],
+            "raw_results": [],
+        }
+
+    q = retrieval["question"]
+    references = retrieval["references"]
+    raw_results = retrieval["raw_results"]
+
     if not raw_results:
         return {
             "answer": (
@@ -336,68 +464,19 @@ def answer_question(question: str, region: Optional[str] = None, mode: str = "hy
         }
 
     top_refs = references[: min(5, len(references))]
-    llm_model = os.getenv("FINREGQA_LLM_MODEL", "gpt-4o-mini")
-    llm_temperature = float(os.getenv("FINREGQA_LLM_TEMPERATURE", "0.1"))
-    llm_base_url = os.getenv("FINREGQA_LLM_BASE_URL")
-    llm_api_key = os.getenv("FINREGQA_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    context_text = _build_context_text(top_refs)
 
     try:
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_openai import ChatOpenAI
 
-        context_lines = []
-        for i, ref in enumerate(top_refs, 1):
-            doc = ref.get("document_name") or "未知文档"
-            art = ref.get("article_number") or "未标明条款"
-            sec = ref.get("section_number") or ""
-            sim = ref.get("similarity")
-            sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
-            content = (ref.get("content") or "").strip()
-            if len(content) > 500:
-                content = content[:500] + "..."
-            context_lines.append(
-                f"【依据{i}】文档：{doc}｜条款：{art} {sec}｜相似度：{sim_text}\n{content}"
-            )
-
-        context_text = "\n\n".join(context_lines)
-
         prompt = ChatPromptTemplate.from_template(
-            """你是一名严谨的金融监管问答助手。请严格基于"法规依据"回答，不得编造。
-
-回答规则：
-1. 只允许使用提供的法规依据。
-2. 先给出结论，再给出依据说明。
-3. 涉及比例、数值、期限时，必须在依据中指出来源条款。
-
-用户问题：
-{question}
-
-法规依据：
-{context}
-
-请按以下格式输出：
-|【结论】
-...
-
-|【依据说明】
-...
-
-|【适用边界/风险提示】
-...
-""".strip()
+            _ANSWER_SYSTEM_PROMPT
+            + "\n\n用户问题：\n{question}\n\n法规依据：\n{context}"
         )
 
-        llm_kwargs = {
-            "model": llm_model,
-            "temperature": llm_temperature,
-        }
-        if llm_base_url:
-            llm_kwargs["base_url"] = llm_base_url
-        if llm_api_key:
-            llm_kwargs["api_key"] = llm_api_key
-
-        llm = ChatOpenAI(**llm_kwargs)
+        llm = ChatOpenAI(**retrieval["llm_kwargs"])
         chain = prompt | llm | StrOutputParser()
         answer = chain.invoke({"question": q, "context": context_text})
 
@@ -410,28 +489,98 @@ def answer_question(question: str, region: Optional[str] = None, mode: str = "hy
         import sys
         print(f"Error: {sys.exc_info()[1]}", file=sys.stderr)
 
-    top_refs = references[: min(3, len(references))]
-    lines = []
-    lines.append(f"问题：{q}")
-    lines.append("基于已检索到的法规片段，相关依据如下：")
-    for i, ref in enumerate(top_refs, 1):
-        doc = ref.get("document_name") or "未知文档"
-        art = ref.get("article_number") or ""
-        sec = ref.get("section_number") or ""
-        sim = ref.get("similarity")
-        sim_text = f"{sim:.3f}" if isinstance(sim, (int, float)) else "N/A"
-        snippet = (ref.get("content") or "").strip()
-        if len(snippet) > 240:
-            snippet = snippet[:240] + "..."
-        lines.append(f"{i}) [{doc}] {art} {sec}（相似度 {sim_text}）：{snippet}")
-
-    lines.append("结论：以上为检索到的条款依据摘要；如需严格合规结论，请以原文条款为准并补充更具体问题。")
-
+    fallback_answer = _build_fallback_answer(q, references)
     return {
-        "answer": "\n".join(lines),
-        "references": top_refs,
+        "answer": fallback_answer,
+        "references": references[: min(3, len(references))],
         "raw_results": raw_results,
     }
+
+
+def answer_question_stream(question: str, region: Optional[str] = None, mode: str = "hybrid"):
+    """
+    流式问答生成器（用于 SSE 端点）。
+
+    先执行检索，然后逐 chunk 产出 LLM 生成内容。
+    每个产出的 item 是 tuple: (event_type: str, payload: str)
+
+    event_type 取值：
+      - "meta"     → payload 为 JSON 字符串，包含 references / raw_results
+      - "answer"   → payload 为 LLM 生成的文本片段
+      - "done"     → 流结束
+      - "no_results" → payload 为提示消息（无检索结果）
+    """
+
+    retrieval = retrieve_references(question, region=region, mode=mode)
+    if not retrieval["ok"]:
+        yield ("answer", "问题为空：请提供一个具体的金融监管问题。")
+        yield ("meta", json.dumps({"references": [], "raw_results": []}, ensure_ascii=False))
+        yield ("done", "")
+        return
+
+    q = retrieval["question"]
+    references = retrieval["references"]
+    raw_results = retrieval["raw_results"]
+
+    meta_json = json.dumps(
+        {
+            "references": references[: min(5, len(references))],
+            "raw_results": raw_results,
+        },
+        ensure_ascii=False,
+        default=str,
+    )
+    yield ("meta", meta_json)
+
+    if not raw_results:
+        yield ("answer", "未检索到足够相关的法规依据，无法可靠回答。你可以尝试更具体的关键词或降低检索阈值。")
+        yield ("done", "")
+        return
+
+    top_refs = references[: min(5, len(references))]
+    context_text = _build_context_text(top_refs)
+
+    llm_kwargs = retrieval["llm_kwargs"]
+    # 使用 LLM 模块的流式能力
+    from LLM.client import stream_chat, LLMConfig
+    from LLM.config import load_llm_config
+
+    cfg = load_llm_config()
+    # 用环境变量中的 model / base_url / api_key 覆盖 LLM 模块默认值
+    cfg_kwargs = {
+        "provider": cfg.provider,
+        "model": llm_kwargs.get("model", cfg.model),
+        "api_key": llm_kwargs.get("api_key") or cfg.api_key,
+        "base_url": llm_kwargs.get("base_url") or cfg.base_url,
+        "temperature": float(llm_kwargs.get("temperature", cfg.temperature)),
+        "max_tokens": cfg.max_tokens,
+        "timeout": cfg.timeout,
+        "max_retries": cfg.max_retries,
+        "enable_thinking": cfg.enable_thinking,
+        "cache_enabled": cfg.cache_enabled,
+        "use_cache_on_error": cfg.use_cache_on_error,
+    }
+    cfg = LLMConfig(**cfg_kwargs)
+
+    messages = [
+        {"role": "system", "content": _ANSWER_SYSTEM_PROMPT},
+        {"role": "user", "content": _build_answer_user_prompt(q, context_text)},
+    ]
+
+    try:
+        for chunk in stream_chat(messages, config=cfg):
+            if chunk.channel == "answer":
+                yield ("answer", chunk.text)
+            elif chunk.channel == "reasoning":
+                yield ("reasoning", chunk.text)
+    except Exception:
+        import sys
+        print(f"Stream error: {sys.exc_info()[1]}", file=sys.stderr)
+        # 流失败时回退到兜底文本
+        fallback = _build_fallback_answer(q, references)
+        yield ("answer", fallback)
+
+    yield ("done", "")
 
 
 def example_basic_usage():

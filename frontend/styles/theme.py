@@ -178,6 +178,19 @@ MAIN_STYLES = """
         line-height: 1.7;
         color: #334155;
     }
+
+    /* 流式输出光标闪烁动画 */
+    .streaming-cursor {
+        display: inline;
+        animation: blink 1s step-end infinite;
+        color: #3b82f6;
+        font-weight: bold;
+    }
+
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+    }
     
     /* 引用框样式 */
     .reference-box {
