@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal, Optional, List
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pydantic import Field
 
@@ -242,6 +243,47 @@ async def api_answer(req: QuestionRequest):
         return answer_question(req.question, region=req.region, mode=req.mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"问答失败: {str(e)}")
+
+
+@router.post("/answer/stream")
+async def api_answer_stream(req: QuestionRequest):
+    """知识库问答流式接口 (SSE)
+
+    以 Server-Sent Events 格式流式返回回答。
+    事件类型：
+      - event: meta     → JSON，包含 references / raw_results
+      - event: answer   → LLM 生成的文本片段
+      - event: done     → 流结束
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    from app.services.knowledge_app import answer_question_stream
+
+    def _generate():
+        for event_type, payload in answer_question_stream(
+            req.question, region=req.region, mode=req.mode
+        ):
+            if event_type == "done":
+                yield "event: done\ndata: \n\n"
+            elif event_type == "meta":
+                # meta 是紧凑 JSON 单行，直接发送
+                yield f"event: meta\ndata: {payload}\n\n"
+            elif event_type in ("answer", "reasoning"):
+                # 将 payload 中的换行替换为空格，避免破坏 SSE 帧格式
+                safe = payload.replace("\n", " ").replace("\r", "")
+                if safe:
+                    yield f"event: {event_type}\ndata: {safe}\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/ingest", response_model=IngestResponse)

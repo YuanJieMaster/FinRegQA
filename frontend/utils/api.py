@@ -181,6 +181,56 @@ def api_get_answer(question: str, region: str = None, mode: str = "hybrid", api_
         return {"success": False, "error": str(e)}
 
 
+def api_get_answer_stream(question: str, region: str = None, mode: str = "hybrid", api_url: str = None):
+    """流式获取问答答案 (SSE 生成器)
+
+    逐 event 产出 dict: {"event": str, "data": str}
+    event 取值: "meta" | "answer" | "done"
+    """
+    import json as _json
+    try:
+        response = requests.post(
+            f"{api_url or get_api_url()}/api/knowledge/answer/stream",
+            json={
+                "question": question,
+                "region": region,
+                "mode": mode,
+            },
+            stream=True,
+            timeout=REQUEST_TIMEOUT_ANSWER,
+        )
+        if response.status_code != 200:
+            yield {"event": "error", "data": f"HTTP {response.status_code}"}
+            return
+
+        current_event = None
+        current_data = None
+        for line in response.iter_lines(decode_unicode=True):
+            if line is None:
+                continue
+            if line.startswith("event: "):
+                current_event = line[7:]
+            elif line.startswith("data: "):
+                current_data = line[6:]
+            elif line == "":
+                # 空行表示一个事件结束
+                if current_event and current_data is not None:
+                    if current_event == "meta":
+                        try:
+                            parsed = _json.loads(current_data)
+                        except Exception:
+                            parsed = current_data
+                        yield {"event": "meta", "data": parsed}
+                    elif current_event in ("answer", "reasoning"):
+                        yield {"event": current_event, "data": current_data}
+                    elif current_event == "done":
+                        yield {"event": "done", "data": None}
+                current_event = None
+                current_data = None
+    except Exception as e:
+        yield {"event": "error", "data": str(e)}
+
+
 def api_ingest_document(file, category: str, regulation_type: str, region: str = None, source: str = None, min_chunk_size: int = 1, keep_separator: bool = True, batch_size: int = 100, api_url: str = None) -> Dict[str, Any]:
     """导入文档"""
     try:

@@ -5,7 +5,7 @@ Question Answering Page Component
 
 import streamlit as st
 from config import REGION_OPTIONS, SEARCH_MODE_OPTIONS
-from utils.api import api_get_answer
+from utils.api import api_get_answer_stream
 
 
 def render_qa_page():
@@ -65,21 +65,46 @@ def render_qa_page():
     
     # 处理提交
     if submit_btn and question.strip():
-        with st.spinner("正在处理..."):
-            api_url = st.session_state.get("api_url", "http://localhost:8000")
-            result = api_get_answer(question, question_region, selected_mode, api_url)
-            
-            if result["success"]:
-                data = result["data"]
-                
-                # 显示答案
-                st.markdown('<p class="section-title">📝 回答</p>', unsafe_allow_html=True)
-                st.markdown(f'<div class="answer-box">{data["answer"]}</div>', unsafe_allow_html=True)
-                
-                # 显示参考文献
-                if data.get("references"):
+        api_url = st.session_state.get("api_url", "http://localhost:8000")
+
+        # 状态提示
+        status_placeholder = st.empty()
+        status_placeholder.info("🔍 正在检索相关知识...")
+
+        # 回答的流式显示容器
+        answer_placeholder = st.empty()
+
+        full_answer = ""
+        meta = None
+
+        for event in api_get_answer_stream(question, question_region, selected_mode, api_url):
+            if event["event"] == "meta":
+                meta = event["data"]
+                status_placeholder.success("✅ 检索完成，正在生成回答...")
+
+            elif event["event"] == "answer":
+                full_answer += event["data"]
+                # 实时更新流式回答
+                answer_placeholder.markdown(
+                    f'<p class="section-title">📝 回答</p>'
+                    f'<div class="answer-box">{full_answer}<span class="streaming-cursor">▌</span></div>',
+                    unsafe_allow_html=True,
+                )
+
+            elif event["event"] == "done":
+                status_placeholder.empty()
+
+                # 显示最终回答（去掉光标）
+                answer_placeholder.markdown(
+                    f'<p class="section-title">📝 回答</p>'
+                    f'<div class="answer-box">{full_answer}</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # 显示参考文献（直接使用 st. 元素，自然排列在 answer_placeholder 下方）
+                if meta and meta.get("references"):
                     st.markdown('<p class="section-title">📚 参考依据</p>', unsafe_allow_html=True)
-                    for i, ref in enumerate(data["references"], 1):
+                    for i, ref in enumerate(meta["references"], 1):
                         with st.expander(f"依据 {i}: {ref.get('document_name', '未知文档')}"):
                             col_ref1, col_ref2 = st.columns([4, 1])
                             with col_ref1:
@@ -96,10 +121,13 @@ def render_qa_page():
                                 sim = ref.get('similarity')
                                 if isinstance(sim, (int, float)):
                                     st.metric("相似度", f"{sim:.3f}")
-                else:
+                elif meta and not meta.get("references"):
                     st.info("未找到相关法规依据")
-            else:
-                st.error(f"错误: {result['error']}")
-    
+
+            elif event["event"] == "error":
+                status_placeholder.empty()
+                st.error(f"流式请求失败: {event['data']}")
+                break
+
     elif submit_btn:
         st.warning("请输入问题")
