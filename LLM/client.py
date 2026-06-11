@@ -112,7 +112,7 @@ def get_llm_client(config: Optional[LLMConfig] = None) -> Any:
     if cfg.max_tokens is not None:
         kwargs["max_tokens"] = cfg.max_tokens
     if cfg.enable_thinking:
-        kwargs["extra_body"] = {"enable_thinking": True}
+        kwargs["extra_body"] = {"enable_thinking": False}
 
     return ChatOpenAI(**kwargs)
 

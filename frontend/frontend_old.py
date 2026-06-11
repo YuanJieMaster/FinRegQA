@@ -439,7 +439,7 @@ def show_login_page():
             
             forgot_btn = st.button("忘记密码？", use_container_width=True)
             
-            st.markdown('</div>', unsafe_allow_html=True)
+            # st.markdown('</div>', unsafe_allow_html=True)
     
     if login_btn:
         if not username or not password:
@@ -514,7 +514,7 @@ def show_register_page():
             with col_btn2:
                 back_btn = st.button("返回登录", use_container_width=True)
             
-            st.markdown('</div>', unsafe_allow_html=True)
+            # st.markdown('</div>', unsafe_allow_html=True)
     
     if submit_btn:
         if not username or not email or not password or not confirm_password:
@@ -587,7 +587,7 @@ def show_forgot_password_page():
             with col_btn2:
                 back_btn = st.button("返回登录", use_container_width=True)
             
-            st.markdown('</div>', unsafe_allow_html=True)
+            # st.markdown('</div>', unsafe_allow_html=True)
     
     if submit_btn:
         if not email:
@@ -681,7 +681,7 @@ def show_main_page():
     # ============================================================================
     
     with tab1:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
         
         st.markdown('<p class="section-title">💬 智能问答</p>', unsafe_allow_html=True)
         
@@ -729,7 +729,7 @@ def show_main_page():
             st.write("")
             submit_btn = st.button("提交", use_container_width=True, type="primary")
         
-        st.markdown('</div>', unsafe_allow_html=True)
+        # st.markdown('</div>', unsafe_allow_html=True)
         
         if submit_btn and question.strip():
             with st.spinner("正在处理..."):
@@ -783,7 +783,7 @@ def show_main_page():
     # ============================================================================
     
     with tab2:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
         
         st.markdown('<p class="section-title">📤 上传文档</p>', unsafe_allow_html=True)
         
@@ -893,7 +893,7 @@ def show_main_page():
                     except Exception as e:
                         st.error(f"发生错误: {str(e)}")
         
-        st.markdown('</div>', unsafe_allow_html=True)
+        # st.markdown('</div>', unsafe_allow_html=True)
     
     
     # ============================================================================
@@ -901,7 +901,7 @@ def show_main_page():
     # ============================================================================
     
     with tab3:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
         
         col_header1, col_header2 = st.columns([4, 1])
         with col_header1:
@@ -935,10 +935,10 @@ def show_main_page():
                             avg_per_doc = stats["knowledge_count"] / max(stats["document_count"], 1)
                             st.metric("平均/文档", f"{avg_per_doc:.1f}")
                     
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    # st.markdown('</div>', unsafe_allow_html=True)
                     
                     if stats["category_distribution"]:
-                        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
                         st.markdown('<p class="section-title">📂 分类分布</p>', unsafe_allow_html=True)
                         col1, col2 = st.columns(2)
                         with col1:
@@ -946,10 +946,10 @@ def show_main_page():
                         with col2:
                             for cat, count in stats["category_distribution"].items():
                                 st.write(f"- **{cat}**: {count}")
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        # st.markdown('</div>', unsafe_allow_html=True)
                     
                     if stats["regulation_distribution"]:
-                        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
                         st.markdown('<p class="section-title">📋 监管类型分布</p>', unsafe_allow_html=True)
                         col1, col2 = st.columns(2)
                         with col1:
@@ -957,10 +957,10 @@ def show_main_page():
                         with col2:
                             for reg_type, count in stats["regulation_distribution"].items():
                                 st.write(f"- **{reg_type}**: {count}")
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        # st.markdown('</div>', unsafe_allow_html=True)
                     
                     if stats.get("region_distribution"):
-                        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
                         st.markdown('<p class="section-title">🌍 地区分布</p>', unsafe_allow_html=True)
                         col1, col2 = st.columns(2)
                         with col1:
@@ -968,7 +968,7 @@ def show_main_page():
                         with col2:
                             for region_name, count in stats["region_distribution"].items():
                                 st.write(f"- **{region_name}**: {count}")
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        # st.markdown('</div>', unsafe_allow_html=True)
                 
                 else:
                     st.error(f"获取统计信息失败: {response.json().get('detail', '未知错误')}")
@@ -991,7 +991,7 @@ def show_main_page():
         # 子标签页 1：知识点管理
         # ---------------------------------------------------------
         with sub_tab1:
-            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            # st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
             # 筛选区域
             st.markdown('<p class="section-title">🔍 筛选条件</p>', unsafe_allow_html=True)
@@ -1213,13 +1213,13 @@ def show_main_page():
                 except Exception as e:
                     st.error(f"发生错误: {str(e)}")
 
-            st.markdown('</div>', unsafe_allow_html=True)
+            # st.markdown('</div>', unsafe_allow_html=True)
 
         # ---------------------------------------------------------
         # 子标签页 2：文档管理
         # ---------------------------------------------------------
         with sub_tab2:
-            st.markdown('<div class="section-card">', unsafe_allow_html=True)
+            # st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
             st.markdown("""
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1306,7 +1306,7 @@ def show_main_page():
                 except Exception as e:
                     st.error(f"发生错误: {str(e)}")
 
-            st.markdown('</div>', unsafe_allow_html=True)
+            # st.markdown('</div>', unsafe_allow_html=True)
     
     
     # ============================================================================
@@ -1314,7 +1314,7 @@ def show_main_page():
     # ============================================================================
 
     with tab5:
-        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        # st.markdown('<div class="section-card">', unsafe_allow_html=True)
 
         col_header1, col_header2 = st.columns([4, 1])
         with col_header1:
@@ -2081,7 +2081,7 @@ def show_main_page():
             except Exception as e:
                 st.error(f"加载报告失败: {e}")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        # st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("""
     <div class="footer">

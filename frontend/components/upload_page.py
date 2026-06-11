@@ -12,7 +12,10 @@ def render_upload_page():
     """渲染文档上传页面"""
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     
-    st.markdown('<p class="section-title">📤 上传文档</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="section-title"><span class="section-title-icon">📤</span>上传文档</p>',
+        unsafe_allow_html=True,
+    )
     
     # 文件上传
     col1, col2 = st.columns(2)

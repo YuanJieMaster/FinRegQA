@@ -6,8 +6,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-
-DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+DEFAULT_QWEN_BASE_URL = "https://api.deepseek.com/v1"
 DEFAULT_QWEN_MODEL = "qwen3.5-plus"
 
 

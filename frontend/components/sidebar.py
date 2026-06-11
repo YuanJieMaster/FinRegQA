@@ -7,61 +7,84 @@ import streamlit as st
 from utils.session import clear_auth, get_api_url, set_api_url
 
 
+def _get_user_initial(username: str) -> str:
+    return (username[:1] or "U").upper()
+
+
 def render_sidebar():
     """渲染侧边栏"""
     with st.sidebar:
-        # 系统配置标题
-        st.markdown("""
-        <div style="text-align: center; padding: 1rem 0;">
-            <h2 style="color: #fff; margin: 0;">⚙️ 系统配置</h2>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # API 地址配置
+        st.markdown(
+            """
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-icon">🏛️</div>
+                <p class="sidebar-brand-title">金融监管知识库</p>
+                <p class="sidebar-brand-sub">FinReg Knowledge Base</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<p class="sidebar-section-title">系统配置</p>', unsafe_allow_html=True)
+
         api_url_input = st.text_input(
             "API 地址",
             value=get_api_url(),
-            help="FastAPI 服务地址"
+            help="FastAPI 服务地址",
+            key="sidebar_api_url",
         )
-        st.session_state.api_url = api_url_input
-        st.session_state.api_url_input = api_url_input
-        
+        set_api_url(api_url_input)
+
+        st.markdown(
+            """
+            <div class="api-status api-status-connected">
+                <span class="api-status-dot"></span>
+                <span>API 已配置</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         st.markdown("---")
-        
-        # 用户信息显示
+
         user_info = st.session_state.get("user_info")
         if user_info:
-            st.markdown(f"""
-            <div class="sidebar-user-card">
-                <div style="font-size: 48px; margin-bottom: 8px;">👤</div>
-                <p class="sidebar-user-name">{user_info.get('username', '用户')}</p>
-                <p class="sidebar-user-role">{user_info.get('role', '普通用户')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("### 👤 用户")
-        
-        # 退出登录按钮
-        if st.button("🚪 退出登录", use_container_width=True):
+            username = user_info.get("username", "用户")
+            initial = _get_user_initial(username)
+            st.markdown(
+                f"""
+                <div class="sidebar-user-card">
+                    <div class="sidebar-avatar">{initial}</div>
+                    <p class="sidebar-user-name">{username}</p>
+                    <p class="sidebar-user-role">{user_info.get('role', '普通用户')}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if st.button("退出登录", use_container_width=True, key="sidebar_logout"):
             clear_auth()
             st.rerun()
-        
+
         st.markdown("---")
-        
-        # 使用说明
-        st.markdown("### 📖 使用说明")
-        st.markdown("""
-        1. **问答**：输入金融监管相关问题，系统会检索法规并生成答案
-        2. **上传文档**：支持 PDF、DOCX、TXT、图片格式（图片使用 OCR 识别）
-        3. **统计**：查看知识库中的文档和知识点数量
-        """)
-        
+
+        st.markdown('<p class="sidebar-section-title">使用说明</p>', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="sidebar-help-item">💬 <strong>问答</strong> — 输入监管问题，检索法规并生成答案</div>
+            <div class="sidebar-help-item">📤 <strong>上传</strong> — 支持 PDF、DOCX、TXT、图片 OCR</div>
+            <div class="sidebar-help-item">📊 <strong>统计</strong> — 查看知识库文档与向量规模</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         st.markdown("---")
-        
-        # 版本信息
-        st.markdown("""
-        <div style="text-align: center; color: #64748b; font-size: 12px; padding: 12px 0;">
-            <p style="margin: 0;">金融监管知识库 v1.0</p>
-            <p style="margin: 4px 0 0 0;">Powered by Streamlit</p>
-        </div>
-        """, unsafe_allow_html=True)
+
+        st.markdown(
+            """
+            <div style="text-align: center; color: #64748b; font-size: 11px; padding: 8px 0;">
+                <p style="margin: 0;">v1.0 · Streamlit</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )

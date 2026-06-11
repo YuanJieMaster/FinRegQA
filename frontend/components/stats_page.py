@@ -13,7 +13,10 @@ def render_stats_page():
     
     col_header1, col_header2 = st.columns([4, 1])
     with col_header1:
-        st.markdown('<p class="section-title">📊 知识库统计</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="section-title"><span class="section-title-icon">📊</span>知识库统计</p>',
+            unsafe_allow_html=True,
+        )
     with col_header2:
         if st.button("刷新", use_container_width=True, key="stats_refresh"):
             st.rerun()

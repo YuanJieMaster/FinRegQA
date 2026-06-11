@@ -17,23 +17,21 @@ from views.login import render_login_page
 from views.register import render_register_page
 from views.forgot_password import render_forgot_password_page
 from views.dashboard import render_main_page
-from styles.theme import get_all_styles
+from styles.theme import get_all_styles, get_font_import
 
 
 def main():
     """主程序入口"""
-    # 页面配置
     st.set_page_config(
         page_title="金融监管知识库",
         page_icon="📚",
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    
-    # 初始化会话状态
+
     init_session_state()
-    
-    # 应用样式
+
+    st.markdown(get_font_import(), unsafe_allow_html=True)
     st.markdown(get_all_styles(), unsafe_allow_html=True)
     
     # 如果已认证，自动跳转到主页
