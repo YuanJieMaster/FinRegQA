@@ -42,6 +42,14 @@ class IngestResponse(BaseModel):
     failed: int
 
 
+class BatchIngestResponse(BaseModel):
+    """批量文档导入响应"""
+    total: int
+    success_count: int
+    failed_count: int
+    results: List[IngestResponse]
+
+
 class StatsResponse(BaseModel):
     """统计信息响应"""
     document_count: int
@@ -333,6 +341,94 @@ async def api_ingest(
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+@router.post("/ingest/batch", response_model=BatchIngestResponse)
+async def api_ingest_batch(
+    files: List[UploadFile] = File(..., description="支持多文件上传"),
+    category: str = Form(...),
+    regulation_type: str = Form(...),
+    region: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    min_chunk_size: int = Form(1),
+    keep_separator: bool = Form(True),
+    batch_size: int = Form(100),
+):
+    """批量知识库文档导入接口"""
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少选择一个文件")
+    
+    results = []
+    success_count = 0
+    failed_count = 0
+    
+    for file in files:
+        if not file.filename:
+            continue
+        
+        allowed_extensions = {".pdf", ".doc", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif", ".webp"}
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in allowed_extensions:
+            results.append(IngestResponse(
+                document_id=0,
+                file_name=file.filename,
+                file_type="",
+                chunk_count=0,
+                success=0,
+                failed=1
+            ))
+            failed_count += 1
+            continue
+        
+        temp_path = None
+        try:
+            temp_path = f"/tmp/{file.filename}"
+            os.makedirs("/tmp", exist_ok=True)
+            with open(temp_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+            
+            result = ingest_regulation_file(
+                file_path=temp_path,
+                category=category,
+                regulation_type=regulation_type,
+                region=region,
+                source=source,
+                min_chunk_size=min_chunk_size,
+                keep_separator=keep_separator,
+                batch_size=batch_size,
+            )
+            
+            results.append(IngestResponse(
+                document_id=result["document_id"],
+                file_name=result["file_name"],
+                file_type=result["file_type"],
+                chunk_count=result["chunk_count"],
+                success=result["success"],
+                failed=result["failed"]
+            ))
+            success_count += 1
+            
+        except Exception as e:
+            results.append(IngestResponse(
+                document_id=0,
+                file_name=file.filename,
+                file_type="",
+                chunk_count=0,
+                success=0,
+                failed=1
+            ))
+            failed_count += 1
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+    
+    return BatchIngestResponse(
+        total=len(files),
+        success_count=success_count,
+        failed_count=failed_count,
+        results=results
+    )
 
 
 @router.get("/stats", response_model=StatsResponse)

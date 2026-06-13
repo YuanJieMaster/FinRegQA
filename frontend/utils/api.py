@@ -255,6 +255,38 @@ def api_ingest_document(file, category: str, regulation_type: str, region: str =
         return {"success": False, "error": str(e)}
 
 
+def api_ingest_documents_batch(files: list, category: str, regulation_type: str, region: str = None, source: str = None, min_chunk_size: int = 1, keep_separator: bool = True, batch_size: int = 100, api_url: str = None) -> Dict[str, Any]:
+    """批量导入文档"""
+    try:
+        # 构建文件列表
+        file_list = []
+        for file in files:
+            file_list.append(
+                ("files", (file.name, file.getbuffer()))
+            )
+        
+        data = {
+            "category": category,
+            "regulation_type": regulation_type,
+            "region": region,
+            "source": source,
+            "min_chunk_size": min_chunk_size,
+            "keep_separator": keep_separator,
+            "batch_size": batch_size,
+        }
+        
+        response = requests.post(
+            f"{api_url or get_api_url()}/api/knowledge/ingest/batch",
+            files=file_list,
+            data=data,
+            timeout=max(REQUEST_TIMEOUT_INGEST * len(files), 300),  # 根据文件数量增加超时时间
+        )
+        
+        return {"success": response.status_code == 200, "data": response.json() if response.status_code == 200 else None, "error": response.json().get("detail") if response.status_code != 200 else None}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def api_get_stats(api_url: str = None) -> Dict[str, Any]:
     """获取统计信息"""
     try:
