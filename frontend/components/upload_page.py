@@ -10,7 +10,7 @@ from utils.api import api_ingest_document, api_ingest_documents_batch
 
 def render_upload_page():
     """渲染文档上传页面"""
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    # st.markdown('<div class="section-card">', unsafe_allow_html=True)
     
     st.markdown(
         '<p class="section-title"><span class="section-title-icon">📤</span>上传文档</p>',

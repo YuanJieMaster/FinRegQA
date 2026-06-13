@@ -16,7 +16,7 @@ EXAMPLE_QUESTIONS = [
 
 def render_qa_page():
     """渲染问答页面"""
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    # st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.markdown(
         '<p class="section-title"><span class="section-title-icon">💬</span>智能问答</p>',
         unsafe_allow_html=True,
@@ -86,7 +86,7 @@ def render_qa_page():
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         submit_btn = st.button("提交问答", use_container_width=True, type="primary", key="qa_submit")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    # st.markdown("</div>", unsafe_allow_html=True)
 
     if submit_btn and question.strip():
         api_url = st.session_state.get("api_url", "http://localhost:8000")

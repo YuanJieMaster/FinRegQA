@@ -18,7 +18,7 @@ from utils.api import (
 
 def render_evaluation_page():
     """渲染评估页面"""
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    # st.markdown('<div class="section-card">', unsafe_allow_html=True)
     
     col_header1, col_header2 = st.columns([4, 1])
     with col_header1:

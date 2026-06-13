@@ -44,7 +44,7 @@ def render_login_page():
         with col_btn2:
             forgot_btn = st.button("忘记密码", use_container_width=True, key="login_forgot")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        # st.markdown("</div>", unsafe_allow_html=True)
 
     if login_btn:
         if not username or not password:

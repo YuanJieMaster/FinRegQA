@@ -991,8 +991,6 @@ def show_main_page():
         # 子标签页 1：知识点管理
         # ---------------------------------------------------------
         with sub_tab1:
-            # st.markdown('<div class="section-card">', unsafe_allow_html=True)
-
             # 筛选区域
             st.markdown('<p class="section-title">🔍 筛选条件</p>', unsafe_allow_html=True)
 

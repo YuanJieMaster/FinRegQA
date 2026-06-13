@@ -34,7 +34,7 @@ def render_knowledge_management_page():
 
 def _render_knowledge_list():
     """渲染知识点列表"""
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    # st.markdown('<div class="section-card">', unsafe_allow_html=True)
     
     # 筛选区域
     st.markdown('<p class="section-title">🔍 筛选条件</p>', unsafe_allow_html=True)
@@ -259,7 +259,7 @@ def _render_edit_form(item: dict):
 
 def _render_document_list():
     """渲染文档列表"""
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    # st.markdown('<div class="section-card">', unsafe_allow_html=True)
     
     st.markdown("""
     <div style="display: flex; justify-content: space-between; align-items: center;">

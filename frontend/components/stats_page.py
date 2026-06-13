@@ -9,14 +9,14 @@ from utils.api import api_get_stats
 
 def render_stats_page():
     """渲染统计页面"""
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    # st.markdown('<div class="section-card">', unsafe_allow_html=True)
     
     col_header1, col_header2 = st.columns([4, 1])
-    with col_header1:
-        st.markdown(
-            '<p class="section-title"><span class="section-title-icon">📊</span>知识库统计</p>',
-            unsafe_allow_html=True,
-        )
+    # with col_header1:
+        # st.markdown(
+        #     '<p class="section-title"><span class="section-title-icon">📊</span>知识库统计</p>',
+        #     unsafe_allow_html=True,
+        # )
     with col_header2:
         if st.button("刷新", use_container_width=True, key="stats_refresh"):
             st.rerun()
@@ -52,7 +52,7 @@ def render_stats_page():
             
             # 分类分布
             if stats.get("category_distribution"):
-                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                # st.markdown('<div class="section-card">', unsafe_allow_html=True)
                 st.markdown('<p class="section-title">📂 分类分布</p>', unsafe_allow_html=True)
                 
                 col_chart1, col_chart2 = st.columns(2)
@@ -65,7 +65,7 @@ def render_stats_page():
             
             # 监管类型分布
             if stats.get("regulation_distribution"):
-                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                # st.markdown('<div class="section-card">', unsafe_allow_html=True)
                 st.markdown('<p class="section-title">📋 监管类型分布</p>', unsafe_allow_html=True)
                 
                 col_chart1, col_chart2 = st.columns(2)
@@ -78,7 +78,7 @@ def render_stats_page():
             
             # 地区分布
             if stats.get("region_distribution"):
-                st.markdown('<div class="section-card">', unsafe_allow_html=True)
+                # st.markdown('<div class="section-card">', unsafe_allow_html=True)
                 st.markdown('<p class="section-title">🌍 地区分布</p>', unsafe_allow_html=True)
                 
                 col_chart1, col_chart2 = st.columns(2)
