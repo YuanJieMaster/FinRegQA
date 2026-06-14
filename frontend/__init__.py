@@ -13,6 +13,7 @@ from .components import (
     render_upload_page,
     render_stats_page,
     render_knowledge_management_page,
+    render_human_eval_page,
 )
 from .utils import (
     init_session_state,
@@ -47,6 +48,7 @@ __all__ = [
     "render_upload_page",
     "render_stats_page",
     "render_knowledge_management_page",
+    "render_human_eval_page",
     # Utils
     "init_session_state",
     "save_tokens",

@@ -74,6 +74,7 @@ def render_sidebar():
             <div class="sidebar-help-item">💬 <strong>问答</strong> — 输入监管问题，检索法规并生成答案</div>
             <div class="sidebar-help-item">📤 <strong>上传</strong> — 支持 PDF、DOCX、TXT、图片 OCR</div>
             <div class="sidebar-help-item">📊 <strong>统计</strong> — 查看知识库文档与向量规模</div>
+            <div class="sidebar-help-item">🧪 <strong>人工评测</strong> — 对 AI 回答进行人工标注，结果本地保存</div>
             """,
             unsafe_allow_html=True,
         )
