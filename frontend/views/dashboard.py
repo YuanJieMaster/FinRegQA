@@ -10,7 +10,6 @@ from components import (
     render_upload_page,
     render_stats_page,
     render_knowledge_management_page,
-    render_evaluation_page,
 )
 from components.ui import render_hero_header
 
@@ -20,12 +19,11 @@ def render_main_page():
     render_sidebar()
     render_hero_header()
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "问答",
         "上传文档",
         "统计信息",
         "知识库管理",
-        "准确率评估",
     ])
 
     with tab1:
@@ -39,9 +37,6 @@ def render_main_page():
 
     with tab4:
         render_knowledge_management_page()
-
-    with tab5:
-        render_evaluation_page()
 
     api_url = st.session_state.get("api_url", "http://localhost:8000")
     st.markdown(

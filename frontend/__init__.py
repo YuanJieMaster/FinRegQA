@@ -3,19 +3,16 @@
 Financial Knowledge Base Frontend Module
 """
 
+from views.login import render_login_page
+from views.register import render_register_page
+from views.forgot_password import render_forgot_password_page
 from views.dashboard import render_main_page
-    render_login_page,
-    render_register_page,
-    render_forgot_password_page,
-    render_main_page,
-)
 from .components import (
     render_sidebar,
     render_qa_page,
     render_upload_page,
     render_stats_page,
     render_knowledge_management_page,
-    render_evaluation_page,
 )
 from .utils import (
     init_session_state,
@@ -50,7 +47,6 @@ __all__ = [
     "render_upload_page",
     "render_stats_page",
     "render_knowledge_management_page",
-    "render_evaluation_page",
     # Utils
     "init_session_state",
     "save_tokens",

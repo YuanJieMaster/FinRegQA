@@ -35,13 +35,6 @@ from .api import (
     api_update_knowledge,
     api_delete_knowledge,
     api_delete_document,
-    api_evaluate_qa_batch,
-    api_evaluate_custom_question,
-    api_evaluate_ingest,
-    api_evaluate_custom_file,
-    api_get_qa_pairs,
-    api_get_ingest_cases,
-    api_get_reports,
 )
 
 __all__ = [
@@ -75,11 +68,4 @@ __all__ = [
     "api_update_knowledge",
     "api_delete_knowledge",
     "api_delete_document",
-    "api_evaluate_qa_batch",
-    "api_evaluate_custom_question",
-    "api_evaluate_ingest",
-    "api_evaluate_custom_file",
-    "api_get_qa_pairs",
-    "api_get_ingest_cases",
-    "api_get_reports",
 ]

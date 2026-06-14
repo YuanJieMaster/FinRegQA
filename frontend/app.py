@@ -8,7 +8,6 @@ Financial Knowledge Base Streamlit Frontend
 - 文档上传
 - 统计信息展示
 - 知识库管理
-- 准确率评估
 """
 
 import streamlit as st

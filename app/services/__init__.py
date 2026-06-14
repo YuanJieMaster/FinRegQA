@@ -12,14 +12,6 @@ from .llm_chunking import (
     chunk_text_with_llm,
     chunk_document_with_llm,
 )
-from .evaluation import (
-    EvaluationService,
-    get_evaluation_service,
-    QAPair,
-    MetricsCalculator,
-    EvaluationReport,
-    EvaluationResult,
-)
 
 __all__ = [
     # 原模块
@@ -34,11 +26,4 @@ __all__ = [
     "get_default_llm_chunker",
     "chunk_text_with_llm",
     "chunk_document_with_llm",
-    # 评估模块
-    "EvaluationService",
-    "get_evaluation_service",
-    "QAPair",
-    "MetricsCalculator",
-    "EvaluationReport",
-    "EvaluationResult",
 ]

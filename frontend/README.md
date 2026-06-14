@@ -31,7 +31,6 @@ frontend/
     ├── upload_page.py      # 文档上传组件
     ├── stats_page.py       # 统计信息组件
     ├── knowledge_page.py    # 知识库管理组件
-    └── evaluation_page.py   # 准确率评估组件
 ```
 
 ## 运行方式
@@ -50,7 +49,7 @@ python -m streamlit run app.py
 包含应用的配置常量，如 API 超时设置、地区选项、文件类型等。
 
 ### styles/
-包含自定义 CSS 样式，定义了认证页面、主页面、侧边栏、评估模块等多种样式。
+包含自定义 CSS 样式，定义了认证页面、主页面、侧边栏等多种样式。
 
 ### utils/
 - `api.py`: API 客户端封装，提供统一的 API 调用接口
@@ -68,7 +67,6 @@ python -m streamlit run app.py
 - `upload_page.py`: 文档上传组件，支持多种文件格式
 - `stats_page.py`: 统计信息组件，展示知识库各类统计数据
 - `knowledge_page.py`: 知识库管理组件，包含知识点和文档管理
-- `evaluation_page.py`: 准确率评估组件，支持问答和文档导入评估
 
 ## 架构特点
 
@@ -84,4 +82,3 @@ python -m streamlit run app.py
 
 - 认证: `/api/v1/auth/*`
 - 知识库: `/api/knowledge/*`
-- 评估: `/api/evaluation/*`
