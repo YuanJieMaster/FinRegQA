@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
 from app.api.v1 import auth, users, knowledge
-from app.services.knowledge_app import close_default_kb
+from app.services.knowledge_app import close_default_kb, get_default_kb
 
 
 app = FastAPI(
@@ -61,8 +61,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 async def startup_event():
-    """应用启动时初始化数据库"""
+    """应用启动时初始化数据库并预热AI模型"""
     init_db()
+    try:
+        get_default_kb()
+        print(f"[OK] AI models preloaded successfully")
+    except Exception as e:
+        print(f"[WARN] AI models preload failed (will lazy-load on first request): {e}")
     print(f"[OK] {settings.APP_NAME} started")
 
 
