@@ -99,13 +99,15 @@ def _render_header(items: list) -> None:
         unsafe_allow_html=True,
     )
 
-    cols = st.columns(5)
+    cols = st.columns(6)
+    accuracy = (summary.get("是", 0) / total) if total else 0.0
     metrics = [
         ("评测总数", total, "info"),
         ("已评测", evaluated, "success"),
         ("是", summary.get("是", 0), "success"),
         ("否", summary.get("否", 0), "danger"),
         ("未评测", summary.get("未评测", 0), "warning"),
+        ("准确率", f"{accuracy*100:.1f}%", "info"),
     ]
     for col, (label, value, kind) in zip(cols, metrics):
         with col:
