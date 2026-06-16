@@ -408,10 +408,6 @@ def render_human_eval_page() -> None:
     for item in page_items:
         _render_eval_row(item)
 
-    # 底部再渲染一次分页（方便翻页）
-    st.markdown("---")
-    _render_pagination(len(filtered))
-
     # 未保存提示与清空操作
     if st.session_state.human_eval_dirty:
         st.warning("⚠️ 当前有未保存的修改，请点击右上角「保存」按钮写入本地。")
